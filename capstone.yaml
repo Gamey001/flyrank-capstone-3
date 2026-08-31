@@ -1,0 +1,62 @@
+# Manifest read by the FlyRank evaluator.
+capstone: embeddable-widget-and-lead-capture-platform
+track: backend
+language: typescript
+stack: [node, express, postgres, docker]
+
+# One command, clean machine: builds the image, starts Postgres, migrates on
+# boot, and serves the customer test page on a second origin.
+run: docker compose up --build
+
+# Demo tenants and widgets. Prints the public widget ids and embed snippets,
+# and writes seed-output.json for scripts. Idempotent.
+seed: docker compose exec api node dist/db/seed.js
+
+# Integration suite against a real Postgres. Needs `docker compose up -d db`.
+test: npm test
+
+base_url: http://localhost:3000
+
+# The second origin — a plain HTML "customer website" that loads the widget.
+customer_site_url: http://localhost:5500
+
+# Runs acceptance probes 1-6 end to end and writes .evidence/probes.log.
+verify: npm run probes
+
+credentials:
+  # Seeded demo accounts. Local demo data only — not secrets.
+  tenant_a: { email: owner@acme.test,   password: demo-password-1234 }
+  tenant_b: { email: owner@globex.test, password: demo-password-1234 }
+
+endpoints:
+  health:
+    - { method: GET, path: /healthz, auth: none, expect: 200 }
+    - { method: GET, path: /readyz,  auth: none, expect: 200 }
+
+  auth:
+    - { method: POST, path: /api/auth/register, auth: none,   expect: 201 }
+    - { method: POST, path: /api/auth/login,    auth: none,   expect: 200 }
+    - { method: GET,  path: /api/auth/me,       auth: bearer, expect: 200 }
+
+  widget_management:
+    - { method: POST,   path: /api/widgets,           auth: bearer, expect: 201 }
+    - { method: GET,    path: /api/widgets,           auth: bearer, expect: 200 }
+    - { method: GET,    path: /api/widgets/:id,       auth: bearer, expect: 200 }
+    - { method: PATCH,  path: /api/widgets/:id,       auth: bearer, expect: 200 }
+    - { method: DELETE, path: /api/widgets/:id,       auth: bearer, expect: 204 }
+    - { method: GET,    path: /api/widgets/:id/embed, auth: bearer, expect: 200 }
+
+  widget_delivery:
+    - { method: GET, path: /widget.js,                          auth: none, expect: 200, cache: "public, max-age=300" }
+    - { method: GET, path: /embed/:version/widget.js,           auth: none, expect: 200, cache: "public, max-age=31536000, immutable" }
+    - { method: GET, path: /api/public/widgets/:publicId/config, auth: none, expect: 200, cache: "public, max-age=60", cors: "*" }
+    - { method: GET, path: /api/public/version,                 auth: none, expect: 200 }
+
+  public_submission:
+    - { method: OPTIONS, path: /api/public/submissions, auth: none, expect: 204, note: "CORS preflight" }
+    - { method: POST,    path: /api/public/submissions, auth: none, expect: 202, note: "cross-origin, rate limited, honeypot + validation" }
+
+  dashboard:
+    - { method: GET, path: /api/dashboard/submissions,     auth: bearer, expect: 200 }
+    - { method: GET, path: /api/dashboard/submissions/:id, auth: bearer, expect: 200 }
+    - { method: GET, path: /api/dashboard/stats,           auth: bearer, expect: 200 }
