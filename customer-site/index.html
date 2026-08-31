@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Northwind Coffee — the "customer website"</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #18181b; background: #fafaf9;
+    }
+    header { padding: 56px 24px 32px; text-align: center; background: #fff; border-bottom: 1px solid #e7e5e4; }
+    header h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -0.02em; }
+    header p { margin: 0; color: #57534e; }
+    main { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
+    section { margin-bottom: 40px; }
+    h2 { font-size: 19px; margin: 0 0 6px; }
+    .hint { color: #57534e; font-size: 14px; margin: 0 0 16px; }
+    .origin-banner {
+      display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: center;
+      padding: 12px 16px; margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #1c1917; color: #e7e5e4;
+    }
+    .origin-banner b { color: #fbbf24; font-weight: 600; }
+    .panel { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 20px; }
+    code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: #f5f5f4; padding: 2px 5px; border-radius: 4px; }
+    .setup { border-left: 3px solid #f59e0b; background: #fffbeb; padding: 16px 20px; border-radius: 0 8px 8px 0; }
+    .setup input {
+      width: 100%; margin-top: 8px; padding: 8px 10px; font: 14px ui-monospace, Menlo, monospace;
+      border: 1px solid #d6d3d1; border-radius: 6px;
+    }
+    .setup button {
+      margin-top: 10px; padding: 8px 16px; font: inherit; font-weight: 600; font-size: 14px;
+      background: #1c1917; color: #fff; border: 0; border-radius: 6px; cursor: pointer;
+    }
+    footer { text-align: center; color: #78716c; font-size: 13px; padding-bottom: 40px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0c0a09; color: #e7e5e4; }
+      header, .panel { background: #1c1917; border-color: #292524; }
+      header p, .hint, footer { color: #a8a29e; }
+      code { background: #292524; }
+      .setup { background: #1c1917; }
+    }
+  </style>
+</head>
+<body>
+  <p class="origin-banner">
+    <span>this page: <b id="page-origin">…</b></span>
+    <span>API: <b id="api-origin">…</b></span>
+    <span>widget bundle: <b id="bundle-version">…</b></span>
+  </p>
+
+  <header>
+    <h1>Northwind Coffee</h1>
+    <p>A site the platform does not own — every widget below is loaded cross-origin.</p>
+  </header>
+
+  <main>
+    <section class="setup">
+      <strong>Set up:</strong> paste the two public widget ids printed by
+      <code>npm run seed</code>. They are remembered in this browser.
+      <input id="signup-id" placeholder="signup widget public id">
+      <input id="contact-id" placeholder="contact widget public id">
+      <input id="api-base" placeholder="API base URL (default http://localhost:3000)">
+      <button id="apply">Load widgets</button>
+    </section>
+
+    <section>
+      <h2>Inline signup form</h2>
+      <p class="hint">Rendered by one <code>&lt;script&gt;</code> tag, exactly as a customer would paste it.</p>
+      <div class="panel"><div id="signup-slot"></div></div>
+    </section>
+
+    <section>
+      <h2>Contact form</h2>
+      <p class="hint">A second widget, same bundle, different configuration.</p>
+      <div class="panel"><div id="contact-slot"></div></div>
+    </section>
+  </main>
+
+  <footer>
+    Open the network tab: the config request and the submission are both
+    cross-origin, and the submission is preceded by an <code>OPTIONS</code> preflight.
+  </footer>
+
+  <script>
+    // Everything below only exists so the page is configurable without editing
+    // the file. A real customer pastes one <script> tag and stops there.
+    var store = {
+      get: function (key, fallback) {
+        try { return localStorage.getItem('nw:' + key) || fallback; } catch (e) { return fallback; }
+      },
+      set: function (key, value) {
+        try { localStorage.setItem('nw:' + key, value); } catch (e) { /* private mode */ }
+      }
+    };
+
+    var DEFAULT_API = 'http://localhost:3000';
+    var apiBase = store.get('api', DEFAULT_API);
+    var signupId = store.get('signup', '');
+    var contactId = store.get('contact', '');
+
+    document.getElementById('page-origin').textContent = window.location.origin || 'file://';
+    document.getElementById('api-origin').textContent = apiBase;
+    document.getElementById('signup-id').value = signupId;
+    document.getElementById('contact-id').value = contactId;
+    document.getElementById('api-base').value = apiBase;
+
+    function mount(publicId, slotId) {
+      if (!publicId) return;
+      var slot = document.getElementById(slotId);
+      slot.setAttribute('data-flyrank-widget', publicId);
+      var script = document.createElement('script');
+      script.src = apiBase + '/widget.js?id=' + encodeURIComponent(publicId);
+      script.async = true;
+      document.body.appendChild(script);
+    }
+
+    document.getElementById('apply').addEventListener('click', function () {
+      store.set('signup', document.getElementById('signup-id').value.trim());
+      store.set('contact', document.getElementById('contact-id').value.trim());
+      store.set('api', document.getElementById('api-base').value.trim() || DEFAULT_API);
+      window.location.reload();
+    });
+
+    fetch(apiBase + '/api/public/version')
+      .then(function (r) { return r.json(); })
+      .then(function (v) { document.getElementById('bundle-version').textContent = v.widgetVersion; })
+      .catch(function () { document.getElementById('bundle-version').textContent = 'API unreachable'; });
+
+    mount(signupId, 'signup-slot');
+    mount(contactId, 'contact-slot');
+  </script>
+</body>
+</html>
