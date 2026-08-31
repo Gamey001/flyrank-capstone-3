@@ -1,0 +1,68 @@
+name: flyrank-widget-platform
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flyrank
+      POSTGRES_PASSWORD: flyrank
+      POSTGRES_DB: flyrank
+    ports:
+      # Published on 55432 so it cannot collide with a Postgres already running
+      # on the host's 5432.
+      - "55432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flyrank -d flyrank"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3000,http://localhost:5500}
+      DATABASE_URL: postgres://flyrank:flyrank@db:5432/flyrank
+      # Demo-only secret. A real deployment injects this from a secret store —
+      # see README "Secrets".
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-secret-change-me-32}
+      GEO_PROVIDERS: ${GEO_PROVIDERS:-ip-api,ipapi-co}
+      GEO_FORCE_DOWN: ${GEO_FORCE_DOWN:-}
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-log}
+      RATE_LIMIT_IP_MAX: ${RATE_LIMIT_IP_MAX:-10}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+
+  # The "customer website": a static page on a *different origin* from the API,
+  # which is the whole point — it is what makes the CORS path real.
+  customer-site:
+    image: node:22-alpine
+    working_dir: /site
+    command: ["npx", "--yes", "serve", "-l", "5500", "."]
+    volumes:
+      - ./customer-site:/site:ro
+    ports:
+      - "5500:5500"
+    depends_on:
+      - api
+
+  # Optional local mail catcher: `docker compose --profile mail up`.
+  # Then set EMAIL_TRANSPORT=smtp, SMTP_HOST=mailpit, SMTP_PORT=1025.
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["mail"]
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+volumes:
+  db-data:
