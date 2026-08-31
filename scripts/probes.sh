@@ -8,19 +8,22 @@
 # depends on a third party actually being down.
 #
 #   Prerequisites:  docker compose up -d db   &&   .env present
-#   Usage:          npm run probes            (writes .evidence/probes.log too)
+#   Usage:          ./scripts/probes.sh       (writes .evidence/probes.log too)
 
 set -euo pipefail
 
 PORT="${PROBE_PORT:-3011}"
 BASE="http://localhost:${PORT}"
 ORIGIN="http://localhost:5500"      # the "customer website" — a different origin
-VISITOR_IP="203.0.113.42"           # a public IP, so geo enrichment is not skipped
+VISITOR_IP="8.8.8.8"                # genuinely public, so geo enrichment is not skipped
+                                    # (Python treats the RFC 5737 TEST-NET ranges as private)
 PASSWORD="probe-password-123456"
 EMAIL="probe-$(date +%s)-$$@example.test"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+PYTHON="${PYTHON:-$ROOT/.venv/bin/python}"
+[ -x "$PYTHON" ] || { echo "No interpreter at $PYTHON — create the venv first."; exit 1; }
 mkdir -p .evidence
 LOG="$ROOT/.evidence/probes.log"
 BODY_FILE="$ROOT/.evidence/body.json"
@@ -36,7 +39,7 @@ FAILURES=0
 # configuration, and the probe would report a success that never happened.
 guard_against_other_workers() {
   local strays
-  strays=$(pgrep -f 'dist/server\.js|tsx (watch )?src/server\.ts' 2>/dev/null | tr '\n' ' ' || true)
+  strays=$(pgrep -f 'uvicorn app\.http\.app:app|app\.worker' 2>/dev/null | tr '\n' ' ' || true)
   if docker compose ps --services --status running 2>/dev/null | grep -qx api; then
     say "The compose 'api' service is running and shares this job queue."
     say "Stop it first:   docker compose stop api"
@@ -44,7 +47,7 @@ guard_against_other_workers() {
   fi
   if [ -n "${strays// /}" ]; then
     say "Another API process is already running (pids: $strays) and shares this job queue."
-    say "Stop it first, then re-run:   npm run probes"
+    say "Stop it first, then re-run:   ./scripts/probes.sh"
     exit 1
   fi
 }
@@ -86,10 +89,11 @@ start_api() {
   say ""
   say "--- starting API on :$PORT with  ${overrides:-(defaults)}"
   # shellcheck disable=SC2086
-  env NODE_ENV=development PORT="$PORT" PUBLIC_BASE_URL="$BASE" LOG_LEVEL=info \
+  env ENVIRONMENT=development PORT="$PORT" PUBLIC_BASE_URL="$BASE" LOG_LEVEL=info \
       TRUST_PROXY_HOPS=1 ADMIN_CORS_ORIGINS="$BASE,$ORIGIN" \
       GEO_PROVIDERS=mock-a,mock-b RUN_WORKER_IN_PROCESS=true $overrides \
-      npx tsx src/server.ts >> "$LOG" 2>&1 &
+      "$PYTHON" -m uvicorn app.http.app:app --host 127.0.0.1 --port "$PORT" \
+      --log-level warning >> "$LOG" 2>&1 &
   API_PID=$!
 
   for _ in $(seq 1 40); do
@@ -102,7 +106,14 @@ start_api() {
 
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 json()   { curl -s "$@"; }
-jqp()    { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(eval('j.'+process.argv[1])??'')})" "$1"; }
+jqp()    { "$PYTHON" -c '
+import json, sys
+data = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    data = data[int(part)] if part.isdigit() else data.get(part)
+    if data is None:
+        break
+print(data if data is not None else "")' "$1"; }
 
 # ===========================================================================
 head_ "SETUP — a tenant, a widget, and the embed snippet"
@@ -246,7 +257,10 @@ check "another visitor's IP"   "$(submit - '{"email":"innocent@example.com","con
 head_ "PROBE 4 — geo enrichment falls back, and degrades without failing"
 geo_of() {  # geo_of -> "<provider> <status> <country>" for the newest submission
   json "$BASE/api/dashboard/submissions?limit=1" -H "authorization: Bearer $TOKEN" \
-    | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s).submissions[0];console.log(x.geoProvider,x.geoStatus,x.country)})"
+    | "$PYTHON" -c '
+import json, sys
+s = json.load(sys.stdin)["submissions"][0]
+print(s["geoProvider"], s["geoStatus"], s["country"])' 
 }
 
 start_api ""

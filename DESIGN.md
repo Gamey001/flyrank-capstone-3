@@ -1,7 +1,9 @@
 # Design — Embeddable Widget & Lead-Capture Platform
 
 *Phase 1 deliverable. Written before the code; annotated afterwards where the build
-changed my mind.*
+changed my mind. The design is language-agnostic — it survived a port from Node to
+Python + FastAPI unchanged, which is the strongest evidence I have that the decisions
+below are about the problem rather than the framework.*
 
 ## The problem
 
@@ -138,6 +140,29 @@ configuration is submitted as JSON, not assembled by dragging fields around. Tha
 where the product would go next and where none of the interesting backend problems
 are, so it is out of scope on purpose. A minimal HTML page acts as the "customer
 website" purely to prove the cross-origin path is real.
+
+## What the port to FastAPI changed
+
+The data model, the three request paths, the caching strategy, the outbox and the
+fallback chain all carried over untouched. Four things genuinely differed:
+
+- **Dynamic validation.** Pydantic is at its best with static models declared as
+  classes, but a submission's shape comes from database rows. The envelope is a
+  Pydantic model; the contents are validated by an explicit walk over the widget's
+  field definitions. Generating a model per widget with `create_model` would have
+  needed caching and invalidation on every revision, for the same result.
+- **Middleware and exception handlers.** Starlette's handlers sit *inside* the
+  middleware stack, so middleware must **return** an error response rather than raise
+  one — raising escapes the handlers and becomes a 500. Both the body-size limit and
+  the CORS rejection hit this.
+- **CORS.** Starlette's `CORSMiddleware` is global, so it cannot express "open here,
+  allow-listed there". Both policies live in one middleware that dispatches on path.
+- **HEAD.** FastAPI does not derive it from a GET route the way Express does, so the
+  public GET endpoints register it explicitly — out of the schema, so each endpoint is
+  documented once.
+
+And one genuine gain: the OpenAPI schema and the `/docs` UI are generated from the
+route signatures, so the API reference cannot drift from the code.
 
 ## Things I changed while building
 
