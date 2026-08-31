@@ -9,7 +9,7 @@ FlyRank backend-track capstone. Node + TypeScript + Express 5 + PostgreSQL, all 
 free to run: `docker compose up --build`.
 
 ```html
-<script src="http://localhost:3000/embed/v95db10fbc8fa/widget.js?id=wfeesy6rqrbosn9z" async></script>
+<script src="http://localhost:3000/embed/v30a2c1550b28/widget.js?id=sddtsb3bkqci93v5" async></script>
 ```
 
 That line is the whole product surface. Everything else — config, rendering, CORS,

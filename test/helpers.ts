@@ -3,18 +3,15 @@ import request from 'supertest';
 import { pool } from '../src/db/pool.js';
 import { runMigrations } from '../src/db/migrate.js';
 
-/**
- * Shared fixtures for the integration tests. Everything here talks to the real
- * Postgres in docker-compose (against TEST_DATABASE_URL) rather than a mock:
- * the behaviours under test — unique indexes, transactions, tenant filters —
- * only exist in the database.
- */
+// These run against the real Postgres from docker-compose: unique indexes,
+// transactions and tenant filters are the behaviours under test, and none of
+// them exist in a mock.
 
 export const migrateOnce = async (): Promise<void> => {
   await runMigrations();
 };
 
-/** CASCADE from tenants reaches widgets and submissions; jobs stand alone. */
+// CASCADE from tenants reaches widgets and submissions; jobs stand alone.
 export const resetDatabase = async (): Promise<void> => {
   await pool.query('TRUNCATE tenants, jobs RESTART IDENTITY CASCADE');
 };

@@ -5,17 +5,14 @@ import { widgetAsset } from '../../services/widget-asset.service.js';
 
 export const healthRoutes = Router();
 
-/** Liveness: is the process up? Deliberately touches nothing else. */
+// Liveness: deliberately touches no dependency.
 healthRoutes.get('/healthz', (_req, res) => {
   res.setHeader('cache-control', 'no-store');
   res.json({ status: 'ok', uptimeSeconds: Math.round(process.uptime()) });
 });
 
-/**
- * Readiness: can this instance actually serve? Checks the dependency it cannot
- * work without, so an orchestrator stops routing traffic here when Postgres is
- * gone instead of serving 500s.
- */
+// Readiness: checks the dependency this service cannot work without, so an
+// orchestrator stops routing here instead of letting it serve 500s.
 healthRoutes.get('/readyz', async (_req, res) => {
   res.setHeader('cache-control', 'no-store');
   try {

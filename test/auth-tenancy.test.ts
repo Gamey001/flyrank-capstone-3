@@ -33,7 +33,6 @@ describe('authentication', () => {
       .expect(200);
 
     expect(login.body.token).toEqual(expect.any(String));
-    // The hash must never leave the service.
     expect(JSON.stringify(login.body)).not.toContain('scrypt');
   });
 
@@ -49,7 +48,7 @@ describe('authentication', () => {
       .send({ email: tenant.email, password: 'definitely-the-wrong-one' })
       .expect(401);
 
-    // Identical responses: the endpoint must not reveal which emails exist.
+    // Identical, or login becomes an account-enumeration oracle.
     expect(unknown.body.error.message).toBe(wrongPassword.body.error.message);
   });
 
@@ -76,7 +75,6 @@ describe('multi-tenant isolation', () => {
       .expect(404);
     await request(app).delete(`/api/widgets/${widget.id}`).set(...bob.auth()).expect(404);
 
-    // …and the widget is untouched.
     const owner = await request(app).get(`/api/widgets/${widget.id}`).set(...alice.auth()).expect(200);
     expect(owner.body.widget.title).toBe('Join the list');
   });
@@ -104,7 +102,8 @@ describe('multi-tenant isolation', () => {
       .expect(200);
     expect(bobSubmissions.body.submissions).toHaveLength(0);
 
-    // Even filtering explicitly by Alice's widget id is a 404, not an empty page.
+    // Filtering explicitly by Alice's widget id must 404, not return an empty
+    // page that looks like she has no submissions.
     await request(app)
       .get(`/api/dashboard/submissions?widgetId=${widget.id}`)
       .set(...bob.auth())

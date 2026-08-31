@@ -66,7 +66,6 @@ export const submissionsRepository = {
     return toSubmission(rows[0]!);
   },
 
-  /** Idempotency lookup: the row a previous request with this key already stored. */
   async findByIdempotencyKey(
     widgetId: string,
     idempotencyKey: string,
@@ -91,8 +90,8 @@ export const submissionsRepository = {
     filter: ListSubmissionsFilter,
     db: Queryable = pool,
   ): Promise<{ items: Submission[]; total: number }> {
-    // The tenant predicate is always $1 and is never optional — every other
-    // filter is appended after it.
+    // Always $1, never optional: every caller-supplied filter is appended after
+    // the tenant predicate rather than replacing it.
     const conditions = ['tenant_id = $1'];
     const values: unknown[] = [filter.tenantId];
 

@@ -7,15 +7,11 @@ export interface EmbedSnippet {
   scriptUrl: string;
   configUrl: string;
   snippet: string;
-  /** Snippet for the customer who wants the widget in a specific spot. */
   snippetWithPlaceholder: string;
 }
 
-/**
- * Builds the one line the customer pastes into their site. It is generated from
- * the widget's public id and the current bundle version, never stored — so an
- * existing widget starts serving a new bundle the moment one is released.
- */
+// Generated on read rather than stored, so an existing widget starts serving a
+// new bundle version the moment one is released.
 export const embedService = {
   forWidget(widget: Pick<Widget, 'publicId'>): EmbedSnippet {
     const base = env.PUBLIC_BASE_URL.replace(/\/+$/, '');

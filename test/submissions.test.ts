@@ -48,7 +48,6 @@ describe('CORS on the public submission endpoint', () => {
       .set(...tenant.auth())
       .expect(200);
 
-    // An unlisted origin is refused before it reaches the route.
     await request(app)
       .get('/api/widgets')
       .set('origin', 'https://evil.example')
@@ -224,7 +223,6 @@ describe('spam controls', () => {
       .expect(200);
     expect(spam.body.submissions).toHaveLength(1);
     expect(spam.body.submissions[0].spamReason).toBe('honeypot_filled');
-    // The honeypot value itself is never kept.
     expect(spam.body.submissions[0].data).not.toHaveProperty('company_website');
   });
 
@@ -290,8 +288,7 @@ describe('idempotency', () => {
     const tenant = await registerTenant(app);
     const widget = await createWidget(app, tenant);
 
-    // Five requests in flight at once: the unique index is the only thing
-    // standing between this and five duplicate leads.
+    // The unique index is the only thing between this and five duplicate leads.
     const responses = await Promise.all(
       Array.from({ length: 5 }, () =>
         request(app)

@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 #
-# Acceptance probes 1-6 from the capstone brief, run end to end against a real
-# server on a real port.
+# Acceptance probes 1-6, run end to end against a real server on a real port.
 #
-# The script starts and restarts the API itself, because three of the probes
-# ("provider A down", "both providers down", "the mail provider throws") are
-# statements about configuration. Toggling them through the environment and
-# restarting is how you would prove them in production, and it keeps the proof
-# deterministic — no probe here depends on a third party actually being down.
+# The script starts and restarts the API itself: three of the probes are
+# statements about configuration ("provider A down", "both down", "the mailer
+# throws"), so proving them means restarting with that environment. No probe
+# depends on a third party actually being down.
 #
 #   Prerequisites:  docker compose up -d db   &&   .env present
 #   Usage:          npm run probes            (writes .evidence/probes.log too)
@@ -52,10 +50,7 @@ guard_against_other_workers() {
 }
 guard_against_other_workers
 
-# --- output helpers --------------------------------------------------------
-# The transcript is meant to be pasted into EVIDENCE.md, so bearer tokens are
-# stripped on the way out. A probe transcript is not a place for a credential,
-# even a throwaway one.
+# The transcript is pasted into EVIDENCE.md, so tokens are stripped on the way.
 redact() { sed -E 's/(Bearer|bearer) [A-Za-z0-9._-]+/\1 <redacted>/g'; }
 say()  { printf '%s\n' "$*" | redact | tee -a "$LOG"; }
 head_() { say ""; say "==============================================================================";
@@ -67,10 +62,9 @@ fail() { say "  FAIL  $*"; FAILURES=$((FAILURES + 1)); }
 check() { if [ "$2" = "$3" ]; then pass "$1 -> $2"; else fail "$1 -> expected $3, got $2"; fi; }
 
 # --- server lifecycle ------------------------------------------------------
-# Killing the launcher is not enough: `npx tsx` runs the server in a child
-# process that outlives its parent. A survivor would keep draining the job
-# queue with the *previous* configuration — which is exactly the thing probe 5
-# is trying to observe — so the port is polled until nothing holds it.
+# Killing the launcher is not enough: `npx tsx` runs the server in a child that
+# outlives its parent, and a survivor would keep draining the job queue with the
+# previous configuration. So the port is polled until nothing holds it.
 stop_api() {
   [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null
   for _ in $(seq 1 40); do
@@ -99,7 +93,6 @@ start_api() {
   API_PID=$!
 
   for _ in $(seq 1 40); do
-    # Confirm the *new* process is answering, not a survivor of the last phase.
     if curl -sf "$BASE/readyz" >/dev/null 2>&1; then return 0; fi
     sleep 0.5
   done
@@ -141,10 +134,9 @@ say "  snippet    : $SNIPPET"
 TOKEN_B=$(json -X POST "$BASE/api/auth/register" -H 'content-type: application/json' \
   -d "{\"email\":\"other-$EMAIL\",\"name\":\"Other Co\",\"password\":\"$PASSWORD\"}" | jqp token)
 
-# `-H 'Expect:'` suppresses curl's 100-continue handshake for bodies over 1KB.
-# Browsers never send that header, so switching it off is what makes the probe
-# behave like the widget: the whole body arrives in one shot, and an oversized
-# one is rejected with the 413 the server actually logs.
+# `-H 'Expect:'` suppresses curl's 100-continue handshake for bodies over 1 KB.
+# Browsers never send it, and with it curl reports a status that does not match
+# what the server logged for an oversized body.
 submit() {  # submit <idempotency-key|-> <json-data> [extra curl args...]
   local key="$1"; shift
   local data="$1"; shift
@@ -157,9 +149,8 @@ submit() {  # submit <idempotency-key|-> <json-data> [extra curl args...]
   curl "${args[@]}" "$@"
 }
 
-# Posts a body straight from a file. Used for the oversized payload: a 20 KB
-# string nested through command substitution is exactly the kind of shell
-# quoting that silently truncates, and a truncated body would prove nothing.
+# Posts from a file. A 20 KB string nested through command substitution gets
+# silently truncated by the shell, and a truncated body proves nothing.
 submit_file() {  # submit_file <path> [extra curl args...]
   local file="$1"; shift
   curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/public/submissions" \
@@ -295,8 +286,7 @@ AFTER=$(json "$BASE/api/dashboard/submissions" -H "authorization: Bearer $TOKEN"
 say ""
 say "--- the failure is visible in the job queue, not in the visitor's response"
 run "curl -s '$BASE/readyz' "
-# The worker retries on a backoff, so poll rather than assume it has already
-# run — a sleep long enough to always work would be a slow, flaky guess.
+# The worker retries on a backoff, so poll rather than sleep-and-hope.
 RETRY_LINE=""
 for _ in $(seq 1 20); do
   RETRY_LINE=$(grep -E 'job failed, scheduled for retry' "$LOG" | tail -1 || true)

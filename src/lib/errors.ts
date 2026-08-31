@@ -1,8 +1,3 @@
-/**
- * One error type crosses every layer boundary. Services throw it, the HTTP
- * error handler is the only place that turns it into a response — so no layer
- * below `http/` ever needs to know what a status code is.
- */
 export class AppError extends Error {
   readonly status: number;
   readonly code: string;

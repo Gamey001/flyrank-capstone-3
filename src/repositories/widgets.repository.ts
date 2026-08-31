@@ -26,8 +26,8 @@ export interface CreateWidgetInput {
 
 export type UpdateWidgetInput = Partial<Omit<CreateWidgetInput, 'tenantId' | 'publicId'>>;
 
-// Maps a domain field name to its column. Anything not in this map can never
-// reach the UPDATE statement, so the dynamic SET clause cannot be injected into.
+// The allow-list that makes the dynamic SET clause below safe: a key absent
+// from this map can never reach the SQL.
 const UPDATABLE_COLUMNS: Record<keyof UpdateWidgetInput, string> = {
   name: 'name',
   type: 'type',
@@ -47,6 +47,8 @@ const UPDATABLE_COLUMNS: Record<keyof UpdateWidgetInput, string> = {
 const JSON_COLUMNS = new Set(['fields', 'display']);
 
 export const widgetsRepository = {
+  // The enum casts are required: COALESCE with a NULL parameter infers text,
+  // which Postgres will not implicitly coerce to an enum column.
   async create(input: CreateWidgetInput, db: Queryable = pool): Promise<Widget> {
     const { rows } = await db.query<WidgetRow>(
       `INSERT INTO widgets (tenant_id, public_id, name, type, status, title, description, button_text,
@@ -77,11 +79,8 @@ export const widgetsRepository = {
     return toWidget(rows[0]!);
   },
 
-  /**
-   * Tenant-scoped read. Every authenticated path uses this — the tenant id is a
-   * required argument, so an isolation bug has to be deliberate rather than an
-   * omission.
-   */
+  // tenantId is a required argument on every read below, so a cross-tenant leak
+  // has to be written deliberately rather than forgotten.
   async findByIdForTenant(id: string, tenantId: string, db: Queryable = pool): Promise<Widget | null> {
     const { rows } = await db.query<WidgetRow>(
       `SELECT ${COLUMNS} FROM widgets WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
@@ -111,10 +110,8 @@ export const widgetsRepository = {
     return { items: items.rows.map(toWidget), total: total.rows[0]?.count ?? 0 };
   },
 
-  /**
-   * The only unauthenticated read of a widget. Named so it is obvious at the
-   * call site that no tenant check applies, and it returns active widgets only.
-   */
+  // The one unauthenticated read in this repository — named so the absence of a
+  // tenant check is obvious at the call site.
   async findActiveByPublicId(publicId: string, db: Queryable = pool): Promise<Widget | null> {
     const { rows } = await db.query<WidgetRow>(
       `SELECT ${COLUMNS} FROM widgets
@@ -144,9 +141,8 @@ export const widgetsRepository = {
       return this.findByIdForTenant(id, tenantId, db);
     }
 
-    // Every config change bumps the revision; the public config ETag is derived
-    // from it, so a customer's browser picks the change up when the short cache
-    // expires instead of serving stale fields forever.
+    // The public config ETag is derived from this, so an edit invalidates a
+    // browser's cached config instead of being served stale indefinitely.
     assignments.push('revision = revision + 1');
     values.push(id, tenantId);
 
@@ -159,10 +155,7 @@ export const widgetsRepository = {
     return rows[0] ? toWidget(rows[0]) : null;
   },
 
-  /**
-   * Soft delete: the widget stops serving immediately, but its submissions stay
-   * readable in the dashboard instead of cascading away.
-   */
+  // Soft, so deleting a widget does not cascade away the leads it collected.
   async softDelete(id: string, tenantId: string, db: Queryable = pool): Promise<boolean> {
     const { rowCount } = await db.query(
       `UPDATE widgets SET deleted_at = now(), status = 'paused'

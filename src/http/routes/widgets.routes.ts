@@ -5,13 +5,10 @@ import { validate, validatedQuery } from '../middleware/validate.js';
 import { uuidParam } from '../validators/common.js';
 import { createWidgetSchema, updateWidgetSchema, widgetListQuery } from '../validators/widget.validators.js';
 
-/**
- * The authenticated widget-management API. `requireAuth` is mounted on the
- * router itself rather than per route, so a new endpoint added here is
- * protected by default instead of by remembering.
- */
 export const widgetsRoutes = Router();
 
+// On the router, not per route, so an endpoint added later is protected by
+// default rather than by remembering.
 widgetsRoutes.use(requireAuth);
 
 widgetsRoutes.post('/', validate('body', createWidgetSchema), async (req, res) => {
@@ -45,7 +42,6 @@ widgetsRoutes.delete('/:id', validate('params', uuidParam('id')), async (req, re
   res.status(204).end();
 });
 
-/** The one line the customer pastes into their site. */
 widgetsRoutes.get('/:id/embed', validate('params', uuidParam('id')), async (req, res) => {
   const embed = await widgetsService.getEmbed(tenantId(req), req.params.id as string);
   res.json({ embed });

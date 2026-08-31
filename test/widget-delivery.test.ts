@@ -76,7 +76,6 @@ describe('widget management', () => {
 
     await request(app).delete(`/api/widgets/${widget.id}`).set(...tenant.auth()).expect(204);
     await request(app).get(`/api/widgets/${widget.id}`).set(...tenant.auth()).expect(404);
-    // A deleted widget stops serving publicly too.
     await request(app).get(`/api/public/widgets/${widget.publicId}/config`).expect(404);
   });
 });
@@ -118,13 +117,11 @@ describe('widget delivery', () => {
     expect(response.headers['access-control-allow-origin']).toBe('*');
     expect(response.headers.vary).toBe('Origin');
 
-    // The config is a projection, not the row: none of this may reach a page
-    // on someone else's website.
+    // None of this may reach a page on someone else's website.
     expect(response.body).not.toHaveProperty('tenantId');
     expect(response.body).not.toHaveProperty('webhookUrl');
     expect(response.body).not.toHaveProperty('notifyEmail');
     expect(response.body.honeypotField).toBe('company_website');
-    // "Small payload" is a requirement, so it is asserted rather than assumed.
     expect(JSON.stringify(response.body).length).toBeLessThan(2048);
   });
 

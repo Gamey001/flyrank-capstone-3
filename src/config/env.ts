@@ -1,12 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
-/**
- * Every environment variable the app reads is declared — and validated — here.
- * The process refuses to boot on a bad value rather than failing later in a
- * request. Secrets are read here and nowhere else.
- */
-
 const csv = (value: string): string[] =>
   value
     .split(',')
@@ -63,7 +57,7 @@ if (!parsed.success) {
   const issues = parsed.error.issues
     .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
     .join('\n');
-  // Printed, not logged: the logger itself depends on this module.
+  // console, not the logger: the logger imports this module.
   console.error(`Invalid environment configuration:\n${issues}\n\nSee .env.example.`);
   process.exit(1);
 }

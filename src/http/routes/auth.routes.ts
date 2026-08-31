@@ -17,7 +17,6 @@ authRoutes.post('/login', authRateLimit, validate('body', loginSchema), async (r
   res.json(result);
 });
 
-/** Cheap way for a client to check a stored token is still good. */
 authRoutes.get('/me', requireAuth, (req, res) => {
   res.json({ tenant: req.tenant });
 });

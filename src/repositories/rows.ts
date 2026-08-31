@@ -1,10 +1,5 @@
 import type { Job, Submission, Tenant, TenantWithSecret, Widget } from '../domain/models.js';
 
-/**
- * The only place that knows Postgres uses snake_case. Everything above the
- * repositories works with the camelCase domain models in `domain/models.ts`.
- */
-
 export interface TenantRow {
   id: string;
   email: string;

@@ -23,9 +23,8 @@ export const dashboardService = {
     tenantId: string,
     query: SubmissionQuery,
   ): Promise<{ items: Submission[]; total: number }> {
-    // Filtering by a widget that is not yours must 404 rather than silently
-    // return an empty page — the tenant check happens before the query, and
-    // again inside it.
+    // Checked before the query as well as inside it: filtering by another
+    // tenant's widget must 404, not return a plausible empty page.
     if (query.widgetId) {
       const widget = await widgetsRepository.findByIdForTenant(query.widgetId, tenantId);
       if (!widget) throw AppError.notFound('Widget not found');
@@ -42,8 +41,6 @@ export const dashboardService = {
   async stats(tenantId: string, query: StatsQuery) {
     const since = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
 
-    // Four independent aggregations over the same window — issued together so
-    // the dashboard costs one round trip's latency, not four.
     const [totals, timeseries, perWidget, geo] = await Promise.all([
       statsRepository.totals(tenantId, since),
       statsRepository.timeseries(tenantId, { since, granularity: query.granularity }),

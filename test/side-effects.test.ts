@@ -7,11 +7,8 @@ import { jobsRepository } from '../src/repositories/jobs.repository.js';
 import { mailer } from '../src/services/mailer.js';
 import { createWidget, migrateOnce, registerTenant, resetDatabase, validSubmission } from './helpers.js';
 
-/**
- * Safe side effects: storing the lead is the job that must not fail. The
- * confirmation email and the webhook are consequences of it, and are allowed
- * to fail, retry, and eventually give up — without the visitor ever knowing.
- */
+// Storing the lead is what must not fail. The email and webhook are allowed to
+// fail, retry and eventually give up, without the visitor ever knowing.
 
 const app = createApp();
 const worker = createWorker();
@@ -38,8 +35,7 @@ describe('side effects are queued, not inlined', () => {
 
     await request(app).post('/api/public/submissions').send(validSubmission(widget.publicId)).expect(202);
 
-    // The transactional outbox: the row and the work it implies exist together
-    // or not at all.
+    // The row and the work it implies commit together or not at all.
     expect(await jobsFor('submission.notify_email')).toHaveLength(1);
     expect(await jobsFor('submission.webhook')).toHaveLength(1);
   });
@@ -82,7 +78,7 @@ describe('a failing side effect never breaks the submission', () => {
       .expect(202);
     expect(response.body.ok).toBe(true);
 
-    // The visitor already has their answer; the failure happens afterwards.
+    // The visitor already has their answer; this failure happens after it.
     await worker.tick();
     expect(send).toHaveBeenCalled();
 
@@ -99,7 +95,7 @@ describe('a failing side effect never breaks the submission', () => {
   it('stores and returns success even when the webhook endpoint is unreachable', async () => {
     const tenant = await registerTenant(app);
     const widget = await createWidget(app, tenant, {
-      // A port nothing is listening on: the delivery genuinely fails.
+      // Port 9 (discard) — nothing listens, so the delivery genuinely fails.
       webhookUrl: 'http://127.0.0.1:9/never-listening',
     });
 
@@ -128,13 +124,13 @@ describe('the background worker', () => {
     await request(app).post('/api/public/submissions').send(validSubmission(widget.publicId)).expect(202);
 
     const [queued] = await jobsFor('submission.notify_email');
-    // Two attempts allowed, so the ceiling is reached in a bounded test.
+    // Lowered so the retry ceiling is reached within a bounded test.
     await pool.query('UPDATE jobs SET max_attempts = 2 WHERE id = $1', [queued.id]);
 
     await worker.tick();
     let job = await jobsRepository.findById(queued.id);
     expect(job?.status).toBe('pending');
-    // Backoff: the retry is scheduled in the future, not run immediately.
+    // Backoff: scheduled in the future rather than retried immediately.
     expect(job!.runAt.getTime()).toBeGreaterThan(Date.now());
 
     await pool.query('UPDATE jobs SET run_at = now() WHERE id = $1', [queued.id]);
@@ -175,8 +171,7 @@ describe('the background worker', () => {
     await worker.tick();
 
     const after = await jobsRepository.findById(job.id);
-    // A missing handler is a deploy bug, not a transient fault — retrying it
-    // five times only delays the alert.
+    // A missing handler is a deploy bug: retrying only delays the alert.
     expect(after?.status).toBe('dead');
     expect(after?.attempts).toBe(1);
   });
@@ -199,8 +194,7 @@ describe('the background worker', () => {
       ),
     );
 
-    // FOR UPDATE SKIP LOCKED is what makes this safe: two workers claiming at
-    // the same moment must take disjoint sets, never the same job twice.
+    // Two workers claiming at once must take disjoint sets, never the same job.
     const [a, b] = await Promise.all([jobsRepository.claimBatch(10), jobsRepository.claimBatch(10)]);
     const ids = [...a, ...b].map((job) => job.id);
     expect(new Set(ids).size).toBe(ids.length);

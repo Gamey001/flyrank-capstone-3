@@ -1,5 +1,5 @@
--- `updated_at` maintained by the database, so no application path can forget
--- it (and a manual UPDATE in psql stays honest too).
+-- Maintained by the database so no write path — including a manual UPDATE in
+-- psql — can forget it.
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
 BEGIN
     NEW.updated_at = now();

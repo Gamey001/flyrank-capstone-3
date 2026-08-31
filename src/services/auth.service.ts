@@ -42,8 +42,8 @@ export const authService = {
   async login(input: { email: string; password: string }): Promise<AuthResult> {
     const tenant = await tenantsRepository.findByEmail(input.email);
 
-    // Same error and roughly the same work whether the account exists or the
-    // password is wrong: a different response would turn this endpoint into an
+    // The discarded hash is deliberate: without it an unknown email returns
+    // measurably faster than a wrong password, and login becomes an
     // account-enumeration oracle.
     if (!tenant) {
       await hashPassword(input.password);
@@ -59,8 +59,7 @@ export const authService = {
 
   verifyToken(token: string): AuthTokenPayload {
     try {
-      // Pinning the algorithm matters: without it a token could arrive signed
-      // with "none" or with an algorithm we never intended to accept.
+      // Pinning `algorithms` is what rejects a token signed with "none".
       const payload = jwt.verify(token, env.JWT_SECRET, {
         algorithms: ['HS256'],
         issuer: ISSUER,

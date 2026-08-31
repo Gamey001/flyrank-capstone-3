@@ -2,11 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 const ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789'; // no l/1/0/o — read aloud safely
 
-/**
- * Public widget id. It travels in a <script src> on someone else's website, so
- * it must be short, URL-safe, and unguessable enough that nobody can enumerate
- * another tenant's widget config.
- */
+// Unguessable rather than sequential: this id is public, so an enumerable one
+// would expose every tenant's widget config.
 export const publicWidgetId = (length = 16): string => {
   const bytes = randomBytes(length);
   let out = '';

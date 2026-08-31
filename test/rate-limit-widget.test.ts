@@ -1,7 +1,7 @@
-/**
- * The per-widget limiter, isolated in its own file so it can be configured
- * independently of the per-IP one: the IP budget is opened wide and the widget
- * budget is tightened, which is the only way to observe one without the other.
+/*
+ * Its own file so the two limiters can be configured independently: the IP
+ * budget is opened wide and the widget budget tightened, which is the only way
+ * to observe one without the other tripping first.
  */
 process.env.RATE_LIMIT_IP_MAX = '100000';
 process.env.RATE_LIMIT_WIDGET_MAX = '3';
@@ -32,8 +32,7 @@ describe('per-widget rate limiting', () => {
 
     const statuses: number[] = [];
     for (let i = 0; i < 6; i += 1) {
-      // Every request from a different IP, so the per-IP limiter cannot be the
-      // thing that catches this — only the per-widget budget can.
+      // A different IP each time, so only the per-widget budget can catch this.
       const response = await request(app)
         .post('/api/public/submissions')
         .set('x-forwarded-for', nextIp())
@@ -51,8 +50,7 @@ describe('per-widget rate limiting', () => {
       .expect(429);
     expect(limited.body.error.scope).toBe('widget');
 
-    // A different widget has its own budget — one customer's traffic spike must
-    // not silence another customer's form.
+    // One customer's traffic spike must not silence another customer's form.
     await request(app)
       .post('/api/public/submissions')
       .set('x-forwarded-for', nextIp())

@@ -10,8 +10,8 @@ export default tseslint.config(
     languageOptions: {
       globals: globals.node,
       parserOptions: {
-        // `allowDefaultProject` covers the config files that sit outside the
-        // app's tsconfig include but still deserve linting.
+        // Config files sit outside the app's tsconfig include but still get
+        // linted.
         projectService: {
           allowDefaultProject: ['eslint.config.js', 'vitest.config.ts', 'scripts/*.mjs'],
         },
@@ -21,8 +21,6 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
-        // A leading underscore is the convention here for "deliberately
-        // discarded" — the honeypot value destructured out of a payload, say.
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'error',
@@ -32,8 +30,7 @@ export default tseslint.config(
     },
   },
   {
-    // Scripts and the seed/migrate CLIs print to stdout by design — that is
-    // their output, not stray debugging.
+    // These print to stdout by design; that is their output, not debugging.
     files: ['scripts/**/*', 'src/db/seed.ts', 'src/db/migrate.ts', 'src/config/env.ts', 'test/**/*'],
     rules: { 'no-console': 'off' },
   },

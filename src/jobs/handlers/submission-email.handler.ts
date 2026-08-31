@@ -3,17 +3,11 @@ import { submissionsRepository } from '../../repositories/submissions.repository
 import { mailer } from '../../services/mailer.js';
 import type { SubmissionEmailPayload } from '../types.js';
 
-/**
- * Notifies the widget owner that a lead arrived. Runs off the request path, so
- * a slow or broken mail provider costs the visitor nothing.
- */
 export const submissionEmailHandler = async (payload: SubmissionEmailPayload): Promise<void> => {
   const submission = await submissionsRepository.findByIdForTenant(payload.submissionId, payload.tenantId);
-  if (!submission) {
-    // The submission is gone (widget deleted, tenant closed). Nothing to send
-    // and retrying will not bring it back — treat as done, not as a failure.
-    return;
-  }
+  // The row is gone (widget or tenant deleted). Retrying cannot bring it back,
+  // so this is done rather than failed.
+  if (!submission) return;
 
   const lines = Object.entries(submission.data).map(([key, value]) => `  ${key}: ${String(value)}`);
   const location = submission.city

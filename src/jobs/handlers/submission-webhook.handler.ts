@@ -5,11 +5,8 @@ import type { SubmissionWebhookPayload } from '../types.js';
 
 const WEBHOOK_TIMEOUT_MS = 5_000;
 
-/**
- * Delivers the submission to the owner's webhook URL. The delivery is retried
- * by the worker on failure and carries the submission id, so a receiver that
- * gets the same event twice can de-duplicate on it.
- */
+// Retried by the worker on failure, so the delivery header carries the
+// submission id for a receiver to de-duplicate on.
 export const submissionWebhookHandler = async (payload: SubmissionWebhookPayload): Promise<void> => {
   const submission = await submissionsRepository.findByIdForTenant(payload.submissionId, payload.tenantId);
   if (!submission) return;

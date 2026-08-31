@@ -8,15 +8,10 @@ import { submissionIpRateLimit, submissionWidgetRateLimit } from '../middleware/
 import { validate } from '../middleware/validate.js';
 import { publicWidgetIdParam, submissionSchema } from '../validators/submission.validators.js';
 
-/**
- * Everything on this router is reachable by the entire internet: no auth, any
- * origin, and the caller is assumed hostile until validated.
- */
 export const publicRoutes = Router();
 
-// CORS first — a preflight must be answered even for a request that will later
-// be rejected, otherwise the browser reports a CORS error instead of the real
-// 4xx and the developer on the other side has no idea what went wrong.
+// Before everything else: a request that will be rejected still needs a correct
+// preflight, or the browser reports a CORS error instead of the real 4xx.
 publicRoutes.use(publicCors);
 
 const CONFIG_MAX_AGE_SECONDS = 60;
@@ -29,17 +24,12 @@ const header = (req: Request, name: string, maxLength = 512): string | null => {
   return value ? value.slice(0, maxLength) : null;
 };
 
-/**
- * The versioned widget bundle.
- *
- * The version in the path is a hash of the file, so this response is immutable:
- * a browser or CDN may keep it for a year and can never serve stale code,
- * because changed code lives at a different URL.
- */
+// Safe to cache for a year because the version in the path is a hash of the
+// file: changed code necessarily lands at a different URL.
 publicRoutes.get('/embed/:version/widget.js', (req, res) => {
   if (req.params.version !== widgetAsset.version) {
-    // An old or forged version string. Redirect rather than 404 so a customer
-    // who cached the snippet itself keeps working after a release.
+    // Redirect rather than 404, so a customer who cached the snippet itself
+    // keeps working across a release.
     res.setHeader('cache-control', 'public, max-age=300');
     res.redirect(302, `${widgetAsset.versionedPath}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
     return;
@@ -47,10 +37,8 @@ publicRoutes.get('/embed/:version/widget.js', (req, res) => {
   sendBundle(res, `public, max-age=${BUNDLE_MAX_AGE_SECONDS}, immutable`);
 });
 
-/**
- * Unversioned convenience URL. Same bytes, but only cacheable for five minutes
- * because this path's content *does* change on release.
- */
+// Same bytes, short cache: unlike the versioned path, this URL's content
+// changes on release.
 publicRoutes.get('/widget.js', (_req, res) => {
   sendBundle(res, 'public, max-age=300, stale-while-revalidate=600');
 });
@@ -63,12 +51,6 @@ function sendBundle(res: Response, cacheControl: string): void {
   res.send(widgetAsset.source);
 }
 
-/**
- * Widget configuration for the browser.
- *
- * Short max-age plus an ETag: a config change is picked up within a minute,
- * and the revalidation after that costs a 304 rather than the payload.
- */
 publicRoutes.get(
   '/api/public/widgets/:publicId/config',
   validate('params', publicWidgetIdParam),
@@ -77,7 +59,7 @@ publicRoutes.get(
 
     res.setHeader('cache-control', `public, max-age=${CONFIG_MAX_AGE_SECONDS}, stale-while-revalidate=300`);
     res.setHeader('etag', etag);
-    // Caches must key on Origin: the CORS response headers vary with it.
+    // The CORS response headers vary with Origin, so caches must key on it.
     res.setHeader('vary', 'Origin');
 
     if (req.header('if-none-match') === etag) {
@@ -88,14 +70,9 @@ publicRoutes.get(
   },
 );
 
-/**
- * The public submission endpoint — the hardened path.
- *
- * Middleware order is the design: parse and size-check, then cheap in-memory
- * rate limits, then schema validation, and only then anything that touches the
- * database or a third party. Work is spent in increasing order of cost, so a
- * flood is rejected before it can be expensive.
- */
+// Middleware order is the design: cheap in-memory rate limits, then schema
+// validation, and only then anything touching the database or a third party —
+// so a flood is rejected before it becomes expensive.
 publicRoutes.post(
   '/api/public/submissions',
   submissionIpRateLimit,
@@ -118,12 +95,9 @@ publicRoutes.post(
       },
     });
 
-    // Never cache a submission response, and never let a shared cache hold one.
     res.setHeader('cache-control', 'no-store');
 
     if (result.status === 'duplicate') {
-      // Idempotent replay: same answer, no second row, flagged so a client can
-      // tell the difference if it cares.
       res.setHeader('idempotent-replay', 'true');
       res.status(200).json({
         ok: true,
@@ -134,19 +108,17 @@ publicRoutes.post(
       return;
     }
 
-    // 202: the row is committed, but the email and webhook it triggers have not
-    // run yet — they are queued. Saying "created" would overstate it.
+    // 202, not 201: the row is committed but its email and webhook are only
+    // queued. Spam reaches here too, with an identical status and shape — a bot
+    // that can detect it was filtered is a bot that can iterate.
     res.status(202).json({
       ok: true,
-      // Spam gets the same shape and the same status as a real submission. A
-      // bot that can tell it was caught is a bot that can iterate.
       id: result.submission?.id ?? null,
       message: result.message,
     });
   },
 );
 
-/** Lets the test page (and a probe) confirm which bundle version is live. */
 publicRoutes.get('/api/public/version', (_req, res) => {
   res.setHeader('cache-control', 'public, max-age=60');
   res.json({

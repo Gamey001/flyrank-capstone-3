@@ -23,7 +23,6 @@ describe('dashboard aggregation', () => {
         .expect(202);
     }
     await request(app).post('/api/public/submissions').send(validSubmission(contact.publicId)).expect(202);
-    // One spam row, so the split between stored and spam is observable.
     await request(app)
       .post('/api/public/submissions')
       .send(

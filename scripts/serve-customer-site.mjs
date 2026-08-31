@@ -3,13 +3,9 @@ import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 
-/**
- * A dependency-free static server for the "customer website".
- *
- * Its only job is to serve customer-site/ on a *different port* from the API,
- * which makes it a different origin — the condition the whole CORS half of this
- * capstone exists to handle. Local development only; not a production server.
- */
+// Serves customer-site/ on a different port from the API, which makes it a
+// different origin — the condition the CORS half of this project exists for.
+// Local development only.
 
 const PORT = Number(process.env.SITE_PORT ?? 5500);
 const ROOT = resolve('customer-site');
@@ -26,8 +22,7 @@ createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const requested = url.pathname === '/' ? '/index.html' : url.pathname;
 
-  // Path traversal guard: resolve, then confirm the result is still inside
-  // ROOT. `../../etc/passwd` never leaves the directory.
+  // Resolve first, then confirm the result is still inside ROOT.
   const filePath = join(ROOT, normalize(requested).replace(/^(\.\.[/\\])+/, ''));
   if (!filePath.startsWith(ROOT)) {
     res.writeHead(403).end('Forbidden');

@@ -2,11 +2,8 @@ import { closePool } from './db/pool.js';
 import { createWorker } from './jobs/worker.js';
 import { logger } from './lib/logger.js';
 
-/**
- * Standalone worker entrypoint, for running the background queue as its own
- * process (or container) instead of inside the API. Set
- * RUN_WORKER_IN_PROCESS=false on the API when you do.
- */
+// Standalone entrypoint for running the queue as its own process. Set
+// RUN_WORKER_IN_PROCESS=false on the API when using this, or jobs run twice.
 const worker = createWorker();
 worker.start();
 

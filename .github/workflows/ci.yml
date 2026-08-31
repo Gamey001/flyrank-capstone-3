@@ -10,9 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      # The tests run against a real Postgres, not a stub: unique indexes,
-      # transactions and the tenant filters are the things under test, and none
-      # of them exist in a fake.
+      # The suite needs a real Postgres: unique indexes, transactions and tenant
+      # filters are the behaviours under test and none exist in a fake.
       postgres:
         image: postgres:16-alpine
         env:
@@ -49,6 +48,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The README promises `docker compose up` works on a clean machine.
-      # CI is where that promise is kept honest.
+      # Keeps the README's one-command promise honest.
       - run: docker compose build api

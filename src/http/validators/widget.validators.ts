@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
+// This name becomes an HTML input name, a JSON key and a dashboard column
+// header, so it is restricted to what is safe in all three.
 const fieldName = z
   .string()
   .trim()
   .min(1)
   .max(64)
-  // The name becomes an HTML input name, a JSON key, and a dashboard column
-  // header. Restricting it here keeps all three well behaved.
   .regex(/^[a-z][a-z0-9_]*$/i, 'Field names must start with a letter and contain only letters, digits and _');
 
 export const widgetFieldSchema = z
@@ -37,8 +37,8 @@ export const widgetDisplaySchema = z
   })
   .strict();
 
-// Only http(s) — a webhook URL is fetched by the server, so allowing other
-// schemes would let a tenant point it at something it should not reach.
+// The server fetches this URL, so other schemes would let a tenant point it at
+// something it should not reach.
 const httpUrl = z
   .string()
   .trim()
@@ -55,9 +55,8 @@ const originUrl = z
     'Each origin must be a scheme + host + optional port, with no path (e.g. https://example.com)',
   );
 
-// The shape both create and update share. Keeping it as a plain object (rather
-// than deriving update from a refined create schema) means `.partial()` still
-// works and the cross-field rules can be stated once, below.
+// Kept unrefined so `.partial()` works below: `.partial()` is unavailable on a
+// schema that has already been refined.
 const widgetBaseSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -78,18 +77,16 @@ const widgetBaseSchema = z
 
 type WidgetPatch = Partial<z.infer<typeof widgetBaseSchema>>;
 
-/**
- * Rules that span more than one field. Applied to create and update alike, so
- * a PATCH cannot sneak past a constraint a POST has to satisfy.
- */
+// Applied to create and update alike, so a PATCH cannot sidestep a constraint
+// a POST must satisfy.
 const crossFieldRules = (widget: WidgetPatch, ctx: z.RefinementCtx): void => {
   if (widget.fields) {
     const names = widget.fields.map((field) => field.name);
     if (new Set(names).size !== names.length) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Field names must be unique' });
     }
-    // A honeypot named like a real field would be stripped from the payload
-    // before storage and silently lose the visitor's answer.
+    // A honeypot sharing a real field's name would be stripped before storage,
+    // silently discarding the visitor's answer.
     const honeypot = widget.honeypotField ?? 'company_website';
     if (names.includes(honeypot)) {
       ctx.addIssue({

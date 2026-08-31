@@ -4,14 +4,8 @@ import { AppError } from '../../lib/errors.js';
 
 type Target = 'body' | 'query' | 'params';
 
-/**
- * Validation at the boundary (shared requirement #2).
- *
- * Nothing past this middleware sees raw request data: the parsed, typed value
- * replaces `req[target]`, so a handler cannot accidentally use the unvalidated
- * version. A schema failure is a 422 with per-field messages — never a 500 from
- * something downstream choking on an unexpected shape.
- */
+// Replaces `req[target]` with the parsed value, so a handler downstream cannot
+// reach the unvalidated version by accident.
 export const validate =
   (target: Target, schema: ZodTypeAny): RequestHandler =>
   (req, _res, next) => {
@@ -31,8 +25,8 @@ export const validate =
     }
 
     if (target === 'query') {
-      // Express 5 makes req.query a getter-only property, so the parsed value
-      // is stashed alongside it rather than assigned over it.
+      // req.query is getter-only in Express 5, so the parsed value is stashed
+      // alongside it rather than assigned over it.
       Object.defineProperty(req, 'validatedQuery', { value: result.data, writable: true, configurable: true });
     } else {
       req[target] = result.data as never;
@@ -40,6 +34,6 @@ export const validate =
     next();
   };
 
-/** Reads what `validate('query', …)` parsed, with the schema's own type. */
+// Reads what `validate('query', …)` stashed, typed by the same schema.
 export const validatedQuery = <T extends ZodTypeAny>(req: unknown, _schema: T): z.infer<T> =>
   (req as { validatedQuery: z.infer<T> }).validatedQuery;

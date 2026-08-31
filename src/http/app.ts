@@ -11,53 +11,42 @@ import { healthRoutes } from './routes/health.routes.js';
 import { publicRoutes } from './routes/public.routes.js';
 import { widgetsRoutes } from './routes/widgets.routes.js';
 
-/**
- * Builds the Express application.
- *
- * Kept separate from `server.ts` so tests can mount it with supertest without
- * binding a port, and so the HTTP layer stays a thin shell over the services.
- */
+// Separate from server.ts so tests can mount the app without binding a port.
 export const createApp = (): Express => {
   const app = express();
 
-  // Express only honours X-Forwarded-For from hops it is told to trust.
-  // Defaulting to 0 matters: trusting a header nobody strips lets any client
-  // claim any IP and walk straight through the per-IP rate limit.
+  // Defaults to 0. Trusting X-Forwarded-For when no proxy strips it lets any
+  // client claim any IP and walk straight through the per-IP rate limit.
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
   app.disable('x-powered-by');
-  app.set('etag', false); // caching is set explicitly per route, never guessed
+  app.set('etag', false); // every route sets its own caching explicitly
 
   app.use(requestContext);
   app.use(httpLogger);
 
   app.use(
     helmet({
-      // The widget bundle is a cross-origin script by definition; the default
-      // CORP/COEP headers would stop customer pages loading it.
+      // The widget bundle is a cross-origin script by definition, so helmet's
+      // default CORP/COEP would stop customer pages loading it.
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       crossOriginEmbedderPolicy: false,
-      // This service returns JSON and one JS file — there is no HTML document
-      // for a CSP to protect.
+      // No HTML document is served, so there is nothing for a CSP to protect.
       contentSecurityPolicy: false,
     }),
   );
 
-  // Size limit before parse: an oversized body is rejected by body-parser
-  // rather than buffered, and the error handler turns that into a clean 413.
+  // The limit is enforced during parsing, so an oversized body is rejected
+  // rather than buffered; the error handler turns that into a 413.
   app.use(
     express.json({
       limit: env.SUBMISSION_BODY_LIMIT_BYTES,
-      // A JSON API should not silently accept a body labelled as something else.
       type: ['application/json', 'application/*+json'],
     }),
   );
 
   app.use(healthRoutes);
-
-  // Public surface: any origin, no credentials, heavily validated.
   app.use(publicRoutes);
 
-  // Authenticated surface: allow-listed origins only.
   app.use('/api/auth', adminCors, authRoutes);
   app.use('/api/widgets', adminCors, adminRateLimit, widgetsRoutes);
   app.use('/api/dashboard', adminCors, adminRateLimit, dashboardRoutes);

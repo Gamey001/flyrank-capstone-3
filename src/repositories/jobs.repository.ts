@@ -12,11 +12,8 @@ export interface EnqueueJobInput {
 }
 
 export const jobsRepository = {
-  /**
-   * Called with the transaction client that stores the submission, so a job
-   * exists if and only if the row it refers to does — the transactional outbox
-   * pattern. No "stored but never notified" and no "notified about nothing".
-   */
+  // Callers pass the transaction client that stores the row this job refers to,
+  // so the two commit together or not at all.
   async enqueue(input: EnqueueJobInput, db: Queryable = pool): Promise<Job> {
     const { rows } = await db.query<JobRow>(
       `INSERT INTO jobs (type, payload, max_attempts, run_at)
@@ -27,14 +24,9 @@ export const jobsRepository = {
     return toJob(rows[0]!);
   },
 
-  /**
-   * Atomically claims a batch of due jobs.
-   *
-   * FOR UPDATE SKIP LOCKED is what makes this safe to run in several worker
-   * processes at once: each claims a disjoint set instead of blocking on the
-   * same rows. The UPDATE ... FROM does the select and the claim in one
-   * statement, so there is no window where a job is selected but unclaimed.
-   */
+  // Select and claim in one statement, so there is no window in which a job is
+  // selected but not yet marked running. SKIP LOCKED lets concurrent workers
+  // take disjoint batches instead of blocking on each other.
   async claimBatch(limit: number, db: Queryable = pool): Promise<Job[]> {
     const { rows } = await db.query<JobRow>(
       `UPDATE jobs
@@ -56,7 +48,6 @@ export const jobsRepository = {
     await db.query(`UPDATE jobs SET status = 'succeeded', locked_at = NULL, last_error = NULL WHERE id = $1`, [id]);
   },
 
-  /** Reschedules with backoff, or gives up and marks the job dead. */
   async markFailed(
     id: string,
     error: string,
@@ -79,10 +70,7 @@ export const jobsRepository = {
     );
   },
 
-  /**
-   * Returns jobs stuck in 'running' past the timeout to 'pending'. A worker
-   * killed mid-job would otherwise leave its row claimed forever.
-   */
+  // Without this, a worker killed mid-job leaves its row claimed forever.
   async requeueStale(olderThanSeconds: number, db: Queryable = pool): Promise<number> {
     const { rowCount } = await db.query(
       `UPDATE jobs

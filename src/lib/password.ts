@@ -8,12 +8,8 @@ const scrypt = promisify(scryptCallback) as (
   options: { N: number; r: number; p: number; maxmem: number },
 ) => Promise<Buffer>;
 
-/**
- * scrypt from node:crypto — a memory-hard KDF that ships with the runtime, so
- * there is no native module to compile in the Docker image. Parameters are
- * stored alongside the hash, which is what lets them be raised later without
- * invalidating existing passwords.
- */
+// Encoded into the hash string, so these can be raised later without
+// invalidating passwords already stored under the old cost.
 const PARAMS = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const KEY_LENGTH = 64;
 

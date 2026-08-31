@@ -33,14 +33,8 @@ export interface SubmitResult {
   message: string;
 }
 
-/**
- * Builds a validator from the widget's own field definitions.
- *
- * Validation is data-driven because the shape of a submission is data: each
- * tenant defines their own fields. `.strict()` is the important part — a
- * payload carrying keys the widget never declared is rejected rather than
- * quietly stored, so nobody can stuff arbitrary JSON into the database.
- */
+// `.strict()` is load-bearing: without it a public endpoint would accept and
+// store any extra keys the caller invented.
 export const buildSubmissionSchema = (widget: Widget): z.ZodType<Record<string, unknown>> => {
   const shape: Record<string, z.ZodTypeAny> = {};
 
@@ -48,7 +42,7 @@ export const buildSubmissionSchema = (widget: Widget): z.ZodType<Record<string, 
     shape[field.name] = fieldSchema(field);
   }
 
-  // The honeypot is accepted (a bot must be able to fill it) but never stored.
+  // Accepted so a bot can fill it, stripped before storage.
   shape[widget.honeypotField] = z.string().max(500).optional();
 
   return z.object(shape).strict();
@@ -58,8 +52,8 @@ const fieldSchema = (field: WidgetField): z.ZodTypeAny => {
   const maxLength =
     field.maxLength ?? (field.type === 'textarea' ? TEXTAREA_MAX_LENGTH : DEFAULT_MAX_FIELD_LENGTH);
 
-  // An unticked checkbox is `false`, not a missing value, so consent-style
-  // required checkboxes must be `true` specifically.
+  // An unticked box posts `false`, not nothing, so a required consent checkbox
+  // has to demand `true` specifically rather than merely being present.
   if (field.type === 'checkbox') {
     return field.required
       ? z.literal(true, { errorMap: () => ({ message: `${field.label} is required` }) })
@@ -83,9 +77,8 @@ const fieldSchema = (field: WidgetField): z.ZodTypeAny => {
 
   if (field.required) return schema;
 
-  // Browsers post untouched inputs as "", which is not the same as "the
-  // visitor left this optional field out". Normalise before validating, or an
-  // empty optional email would fail the email check.
+  // Browsers post an untouched input as "", so without this an optional email
+  // left blank would fail the email check.
   return z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     schema.optional(),
@@ -93,8 +86,8 @@ const fieldSchema = (field: WidgetField): z.ZodTypeAny => {
 };
 
 const originMatches = (allowed: string[], origin: string | null): boolean => {
-  // No allow-list = a widget meant for any site, which is the normal case for
-  // an embeddable widget. A non-empty list is an explicit lock-down.
+  // An empty list means any origin — the normal case for a widget meant to be
+  // pasted anywhere. A non-empty list is an explicit lock-down.
   if (allowed.length === 0) return true;
   if (!origin) return false;
   return allowed.some((entry) => entry === '*' || entry.toLowerCase() === origin.toLowerCase());
@@ -107,7 +100,6 @@ const emailFromData = (widget: Widget, data: Record<string, unknown>): string | 
 };
 
 export const submissionsService = {
-  /** Resolves the widget a public request is for, or 404s. */
   async requireActiveWidget(publicId: string): Promise<Widget> {
     const widget = await widgetsRepository.findActiveByPublicId(publicId);
     if (!widget) throw AppError.notFound('Widget not found or inactive');
@@ -121,8 +113,6 @@ export const submissionsService = {
       throw AppError.forbidden('This widget does not accept submissions from that origin');
     }
 
-    // Idempotency (shared requirement #5). A retried POST — the visitor's
-    // network dropped, the widget resent — must not create a second lead.
     if (input.idempotencyKey) {
       const existing = await submissionsRepository.findByIdempotencyKey(widget.id, input.idempotencyKey);
       if (existing) {
@@ -148,12 +138,10 @@ export const submissionsService = {
       userAgent: input.context.userAgent,
     });
 
-    // The honeypot value never reaches storage — its only job was to be filled.
     const { [widget.honeypotField]: _honeypot, ...clean } = parsed.data;
 
-    // Spam is stored, not discarded: it is classified, counted in the
-    // dashboard, and answered with the same 202 a real visitor gets, so a bot
-    // learns nothing about why it was dropped.
+    // Stored rather than dropped, and the caller returns the same 202 a human
+    // gets: a bot that can detect it was filtered is a bot that can iterate.
     if (verdict.isSpam) {
       logger.info(
         { widgetId: widget.id, reason: verdict.reason, ip: input.context.ip },
@@ -163,22 +151,15 @@ export const submissionsService = {
       return { status: 'accepted', submission: null, message: widget.successMessage };
     }
 
-    // Enrichment is best-effort by construction: enrichWithGeo never throws, so
-    // there is no failure here that could stop the row being written.
+    // enrichWithGeo never throws, so nothing here can stop the row being written.
     const geo = await enrichWithGeo(input.context.ip);
 
     const submission = await this.store(widget, clean, input, geo, null);
     return { status: 'accepted', submission, message: widget.successMessage };
   },
 
-  /**
-   * Writes the submission and enqueues its side effects in one transaction.
-   *
-   * The email and the webhook go into the `jobs` table rather than being fired
-   * here. That is what makes a failing side effect harmless: the request path
-   * only writes rows, and anything that can fail happens later, with retries,
-   * in the worker.
-   */
+  // Side effects are enqueued here, never invoked. That is what makes a failing
+  // email or webhook harmless: this path only writes rows.
   async store(
     widget: Widget,
     data: Record<string, unknown>,
@@ -207,7 +188,6 @@ export const submissionsService = {
           client,
         );
 
-        // Spam does not deserve a notification email.
         if (!spamReason) {
           if (widget.notifyEmail) {
             await jobsRepository.enqueue(
@@ -243,8 +223,8 @@ export const submissionsService = {
         return submission;
       });
     } catch (error) {
-      // Two requests raced with the same idempotency key: the unique index did
-      // its job. Return the row the winner stored.
+      // 23505 here means two requests raced on the same idempotency key and the
+      // unique index rejected the loser. Return what the winner stored.
       if ((error as { code?: string }).code === '23505' && input.idempotencyKey) {
         const existing = await submissionsRepository.findByIdempotencyKey(widget.id, input.idempotencyKey);
         if (existing) return existing;

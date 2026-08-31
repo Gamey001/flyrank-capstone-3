@@ -1,12 +1,10 @@
-/**
- * The rate limiters are built from env at module load, so this file lowers the
- * limits *before* importing the app. It is also its own file because vitest
- * gives each file a fresh module registry — these low limits cannot leak into
- * any other test.
+/*
+ * The limiters are built from env at module load, so these are set before the
+ * dynamic imports below — and this is its own file because vitest gives each
+ * file a fresh module registry, so the low limits cannot leak elsewhere.
  *
- * `TRUST_PROXY_HOPS=1` lets each test present its own client IP via
- * X-Forwarded-For, so tests get independent budgets instead of sharing (and
- * exhausting) 127.0.0.1's.
+ * TRUST_PROXY_HOPS=1 lets each test present its own IP, so they get independent
+ * budgets rather than all exhausting 127.0.0.1's.
  */
 process.env.RATE_LIMIT_IP_MAX = '5';
 process.env.RATE_LIMIT_IP_WINDOW_SECONDS = '60';
@@ -47,8 +45,7 @@ describe('abuse protection — per-IP rate limiting', () => {
     expect(statuses.slice(0, 5)).toEqual([202, 202, 202, 202, 202]);
     expect(statuses.slice(5)).toEqual(Array.from({ length: 7 }, () => 429));
 
-    // The point of a rate limit is that the service stays up. A flooding client
-    // must not take the rest of the API down with it.
+    // The point of a limit: a flooding client must not take the API down.
     await request(app).get('/healthz').expect(200);
     await request(app).get(`/api/public/widgets/${widget.publicId}/config`).expect(200);
     await request(app).get('/api/dashboard/stats').set(...tenant.auth()).expect(200);
@@ -73,8 +70,8 @@ describe('abuse protection — per-IP rate limiting', () => {
       .send(validSubmission(widget.publicId))
       .expect(429);
 
-    // Legitimate traffic from anywhere else is unaffected — a per-IP limit that
-    // punished everyone would be a denial of service, not a defence against one.
+    // A per-IP limit that punished everyone would be the denial of service it
+    // is meant to prevent.
     await request(app)
       .post('/api/public/submissions')
       .set('x-forwarded-for', bystander)

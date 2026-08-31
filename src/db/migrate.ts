@@ -7,8 +7,8 @@ import { logger } from '../lib/logger.js';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 
-// Any Postgres advisory-lock key works as long as every deploy uses the same
-// one. It stops two containers booting at once from applying a migration twice.
+// Arbitrary, but must be identical across deploys: it is what stops two
+// containers booting at once from applying the same migration twice.
 const ADVISORY_LOCK_KEY = 8_147_226_301;
 
 const checksum = (sql: string): string => createHash('sha256').update(sql).digest('hex');
@@ -39,8 +39,6 @@ export const runMigrations = async (): Promise<{ applied: string[] }> => {
       const previous = done.get(file);
 
       if (previous !== undefined) {
-        // An edited migration means the database and the repo disagree about
-        // what the schema is. Fail loudly instead of guessing.
         if (previous !== hash) {
           throw new Error(
             `Migration ${file} has changed since it was applied. Add a new migration instead of editing history.`,
@@ -49,8 +47,6 @@ export const runMigrations = async (): Promise<{ applied: string[] }> => {
         continue;
       }
 
-      // Each migration is its own transaction: a failure leaves every earlier
-      // migration applied and this one fully rolled back.
       await client.query('BEGIN');
       try {
         await client.query(sql);
@@ -72,7 +68,6 @@ export const runMigrations = async (): Promise<{ applied: string[] }> => {
   }
 };
 
-// `npm run migrate` — also runnable as a library from server boot and tests.
 const isDirectRun = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
 if (isDirectRun) {
   try {

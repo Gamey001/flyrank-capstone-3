@@ -26,7 +26,6 @@ dashboardRoutes.get('/submissions/:id', validate('params', uuidParam('id')), asy
   res.json({ submission });
 });
 
-/** Counts over time, per-widget totals and a geo breakdown, in one response. */
 dashboardRoutes.get('/stats', validate('query', statsQuery), async (req, res) => {
   const query = validatedQuery(req, statsQuery);
   const stats = await dashboardService.stats(tenantId(req), query);

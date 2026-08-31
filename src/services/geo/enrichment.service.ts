@@ -35,23 +35,14 @@ export const resolveProviderChain = (names: string[]): GeoProvider[] => {
   return chain;
 };
 
-/**
- * Turns an IP into a location by trying providers in order.
- *
- * The whole point of this function is that it never throws. A submission is the
- * visitor's data; geo is something we bolt on afterwards. Every failure mode —
- * every provider down, a timeout, a garbage response, no providers configured
- * at all — resolves to `status: 'unavailable'` and the submission proceeds.
- */
+// Never throws. Every failure mode — provider down, timeout, garbage response,
+// nothing configured — resolves to `status: 'unavailable'` so a caller can
+// store the submission regardless. Callers rely on this; do not add a throw.
 export const enrichWithGeo = async (
   ip: string | null,
   options: EnrichmentOptions = {},
 ): Promise<GeoResult> => {
-  if (!ip || isPrivateIp(ip)) {
-    // Private and loopback addresses have no public location. Asking a provider
-    // burns quota to be told so.
-    return NO_GEO('skipped');
-  }
+  if (!ip || isPrivateIp(ip)) return NO_GEO('skipped');
 
   const forceDown = new Set(options.forceDown ?? env.GEO_FORCE_DOWN);
   const timeoutMs = options.timeoutMs ?? env.GEO_TIMEOUT_MS;
@@ -77,7 +68,6 @@ export const enrichWithGeo = async (
     }
   }
 
-  // Chain exhausted. Degrade, never fail.
   logger.warn({ failures }, 'geo enrichment unavailable; storing submission without geo data');
   return NO_GEO('unavailable');
 };

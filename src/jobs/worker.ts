@@ -16,15 +16,14 @@ const HANDLERS: Record<string, Handler> = {
 // A job still 'running' after this long belongs to a worker that died.
 const STALE_JOB_SECONDS = 120;
 
-/** Exponential backoff with a ceiling: 2s, 4s, 8s, 16s, … capped at 5 minutes. */
 const backoffSeconds = (attempts: number): number => Math.min(2 ** attempts, 300);
 
 const runJob = async (job: Job): Promise<void> => {
   const handler = HANDLERS[job.type];
 
   if (!handler) {
-    // An unknown type is a deploy problem, not a transient fault. Retrying it
-    // 5 times just delays the alert.
+    // A missing handler is a deploy problem, not a transient fault: retrying it
+    // would only delay the alert.
     logger.error({ jobId: job.id, type: job.type }, 'no handler registered for job type');
     await jobsRepository.markFailed(job.id, `no handler registered for job type "${job.type}"`, {
       retryInSeconds: null,
@@ -45,8 +44,7 @@ const runJob = async (job: Job): Promise<void> => {
     });
 
     if (exhausted) {
-      // The failure alert required by shared requirement #3. In a hosted
-      // deployment this is the line an alerting rule matches on.
+      // The line an alerting rule matches on in a hosted deployment.
       logger.error(
         { jobId: job.id, type: job.type, attempts: job.attempts, err: message, alert: 'job_dead' },
         'JOB DEAD after exhausting retries — needs manual attention',
@@ -63,35 +61,26 @@ const runJob = async (job: Job): Promise<void> => {
 export interface Worker {
   start(): void;
   stop(): Promise<void>;
-  /** Processes one batch immediately. Exposed so tests need no timers. */
+  // Runs one batch synchronously; lets tests drive the worker without timers.
   tick(): Promise<number>;
 }
 
-/**
- * Polling worker over the `jobs` table.
- *
- * Polling (rather than a broker) is a deliberate choice for this system: it
- * keeps the $0 stack to one dependency, the queue is transactional with the
- * data it refers to, and at lead-capture volumes a one-second poll is far
- * inside the latency anyone notices.
- */
 export const createWorker = (): Worker => {
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let stopped = false;
 
   const tick = async (): Promise<number> => {
-    // A tick is never allowed to overlap itself: a slow batch would otherwise
-    // stack up ticks until the pool is exhausted.
+    // Ticks must not overlap: a slow batch would otherwise stack them up until
+    // the connection pool is exhausted.
     if (running) return 0;
     running = true;
     try {
       const requeued = await jobsRepository.requeueStale(STALE_JOB_SECONDS);
       if (requeued > 0) logger.warn({ requeued }, 'requeued stale jobs from a dead worker');
 
+      // Safe as Promise.all rather than allSettled because runJob never rejects.
       const jobs = await jobsRepository.claimBatch(env.JOB_BATCH_SIZE);
-      // Batch members are independent; one slow webhook should not delay the
-      // rest, and runJob never rejects.
       await Promise.all(jobs.map(runJob));
       return jobs.length;
     } catch (error) {
@@ -121,7 +110,7 @@ export const createWorker = (): Worker => {
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
-      // Let an in-flight batch finish so a shutdown does not orphan jobs.
+      // Drain an in-flight batch so shutdown does not orphan claimed jobs.
       while (running) await new Promise((resolve) => setTimeout(resolve, 25));
     },
     tick,

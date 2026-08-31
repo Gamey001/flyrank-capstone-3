@@ -11,11 +11,8 @@ import { embedService, type EmbedSnippet } from './embed.service.js';
 
 export type CreateWidgetRequest = Omit<CreateWidgetInput, 'tenantId' | 'publicId'>;
 
-/**
- * The payload the visitor's browser downloads. Deliberately a projection, not
- * the row: it must never leak the tenant id, the webhook URL, the notification
- * address, or anything else that is nobody's business on a public web page.
- */
+// A projection, not the row: this is downloaded by every visitor to a customer
+// site, so tenantId, webhookUrl and notifyEmail must never appear in it.
 export interface PublicWidgetConfig {
   id: string;
   type: Widget['type'];
@@ -58,8 +55,8 @@ export const widgetsService = {
 
   async get(tenantId: string, widgetId: string): Promise<WidgetWithEmbed> {
     const widget = await widgetsRepository.findByIdForTenant(widgetId, tenantId);
-    // A widget belonging to another tenant is reported as missing, not as
-    // forbidden: a 403 would confirm the id exists.
+    // 404 rather than 403 for another tenant's widget: a 403 confirms the id
+    // exists. Same reasoning throughout this service.
     if (!widget) throw AppError.notFound('Widget not found');
     return withEmbed(widget);
   },
@@ -80,7 +77,6 @@ export const widgetsService = {
     return widget.embed;
   },
 
-  /** Public, unauthenticated: what the browser gets from the config endpoint. */
   async publicConfig(publicId: string): Promise<{ config: PublicWidgetConfig; etag: string }> {
     const widget = await widgetsRepository.findActiveByPublicId(publicId);
     if (!widget) throw AppError.notFound('Widget not found or inactive');
@@ -98,8 +94,7 @@ export const widgetsService = {
       revision: widget.revision,
     };
 
-    // Revision + updated_at cover every way the config can change, so a browser
-    // that revalidates gets a 304 instead of the payload again.
+    // revision and updated_at together cover every way the config can change.
     const etag = `"${createHash('sha1')
       .update(`${widget.publicId}:${widget.revision}:${widget.updatedAt.toISOString()}`)
       .digest('hex')

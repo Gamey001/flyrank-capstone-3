@@ -8,13 +8,8 @@ import { logger } from './lib/logger.js';
 import { widgetAsset } from './services/widget-asset.service.js';
 import { mailer } from './services/mailer.js';
 
-/**
- * Process entrypoint: migrate, listen, and shut down cleanly.
- *
- * Migrations run at boot (guarded by a Postgres advisory lock, so several
- * replicas starting together is safe) which is what makes `docker compose up`
- * a single command on a clean machine.
- */
+// Migrating at boot is what makes `docker compose up` a single command on a
+// clean machine; the runner's advisory lock makes concurrent starts safe.
 const start = async (): Promise<void> => {
   await pool.query('SELECT 1');
   const { applied } = await runMigrations();
@@ -42,8 +37,7 @@ const start = async (): Promise<void> => {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
-    // Stop accepting connections first, then drain: reversing this would kill
-    // requests that are already in flight.
+    // Stop accepting connections before draining, or in-flight requests die.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await worker?.stop();
     await closePool();
@@ -53,8 +47,8 @@ const start = async (): Promise<void> => {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
-  // A rejection nobody handled leaves the process in an unknown state. Log it
-  // loudly and let the orchestrator restart a clean one.
+  // An unhandled rejection leaves the process in an unknown state: log it and
+  // let the orchestrator start a clean one.
   process.on('unhandledRejection', (reason) => {
     logger.fatal({ err: reason }, 'unhandled promise rejection');
     process.exit(1);

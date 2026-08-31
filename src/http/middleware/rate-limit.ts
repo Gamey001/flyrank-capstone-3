@@ -4,18 +4,11 @@ import { env } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 
-/**
- * Rate limiting for the public submission endpoint.
- *
- * Two independent limiters run in series, because they defend against two
- * different things: the per-IP limiter stops one machine flooding, and the
- * per-widget limiter caps the blast radius of a distributed flood against a
- * single customer's form. Either can trip; neither knows about the other.
- *
- * Both use the in-memory store, which is correct for a single instance. Running
- * several API replicas needs a shared store (Redis) or the effective limit
- * multiplies by the replica count — noted in the README's limitations.
- */
+// Two limiters in series for two threat models: per-IP stops one machine
+// flooding, per-widget caps a distributed flood that shares no IP.
+//
+// The in-memory store is correct for one instance only — across several
+// replicas the effective limit multiplies by the replica count.
 
 const rejection =
   (scope: string) =>
@@ -43,8 +36,7 @@ export const submissionIpRateLimit: RequestHandler = rateLimit({
   windowMs: env.RATE_LIMIT_IP_WINDOW_SECONDS * 1000,
   limit: env.RATE_LIMIT_IP_MAX,
   handler: rejection('ip'),
-  // Preflights carry no payload and are cached by the browser; counting them
-  // would spend a visitor's budget before they submitted anything.
+  // Counting preflights would spend a visitor's budget before they submitted.
   skip: (req) => req.method === 'OPTIONS',
 });
 
@@ -54,19 +46,16 @@ export const submissionWidgetRateLimit: RequestHandler = rateLimit({
   limit: env.RATE_LIMIT_WIDGET_MAX,
   handler: rejection('widget'),
   skip: (req) => req.method === 'OPTIONS',
+  // Runs after the body parser but before validation, so widgetId is present
+  // but untrusted; an unusable one falls back to an IP key and is rejected by
+  // the schema a moment later.
   keyGenerator: (req) => {
     const body = req.body as { widgetId?: unknown } | undefined;
     const widgetId = typeof body?.widgetId === 'string' ? body.widgetId : null;
-    // An unidentifiable request cannot exhaust a specific widget's budget, so
-    // it falls back to the per-IP key and gets rejected by validation anyway.
     return widgetId ? `widget:${widgetId}` : `ip:${req.ip ?? 'unknown'}`;
   },
 });
 
-/**
- * A gentler limiter for the authenticated API. Login and register are the
- * endpoints worth brute-forcing, so they get their own tighter budget.
- */
 export const authRateLimit: RequestHandler = rateLimit({
   ...base,
   windowMs: 15 * 60 * 1000,

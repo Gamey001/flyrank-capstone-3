@@ -1,11 +1,7 @@
 import { z } from 'zod';
 
-/**
- * The outer envelope of a public submission. The *contents* of `data` are
- * validated separately, against the widget's own field definitions — this
- * schema only has to guarantee the request is structurally sane before a
- * database lookup happens.
- */
+// The envelope only. `data`'s contents are validated separately against the
+// widget's own field definitions, once the widget has been loaded.
 export const submissionSchema = z
   .object({
     widgetId: z
@@ -14,8 +10,6 @@ export const submissionSchema = z
       .min(8)
       .max(64)
       .regex(/^[a-z0-9]+$/i, 'widgetId is not a valid public widget id'),
-    // Capped independently of the body-size limit: 60 keys of legal JSON is
-    // already far past any real form.
     data: z.record(z.union([z.string().max(5000), z.boolean(), z.number()])).refine(
       (data) => Object.keys(data).length <= 60,
       'Too many fields in the submission',

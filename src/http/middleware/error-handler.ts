@@ -19,7 +19,6 @@ export const notFoundHandler: RequestHandler = (req, _res, next) => {
 const normalise = (error: unknown): AppError => {
   if (error instanceof AppError) return error;
 
-  // A schema that was validated outside a route validator.
   if (error instanceof ZodError) {
     return AppError.unprocessable(
       'Request failed validation',
@@ -29,9 +28,8 @@ const normalise = (error: unknown): AppError => {
 
   const candidate = error as { type?: string; status?: number; statusCode?: number; message?: string };
 
-  // body-parser rejections. Without this branch a body one byte over the limit,
-  // or a stray trailing comma, would surface as a 500 — the exact thing
-  // acceptance probe 2 checks for.
+  // body-parser's typed errors. Without these branches an oversized or
+  // malformed body surfaces as a 500 rather than the 413/400 it should be.
   if (candidate.type === 'entity.too.large') {
     return AppError.payloadTooLarge('Request body exceeds the maximum allowed size');
   }
@@ -50,13 +48,6 @@ const normalise = (error: unknown): AppError => {
   return AppError.internal('Internal server error', error);
 };
 
-/**
- * The single place an error becomes a response.
- *
- * Two rules it exists to enforce: every error answers with the same JSON shape,
- * and a 5xx never echoes an internal message back to the caller — the details
- * go to the log, the client gets the request id to quote.
- */
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   const appError = normalise(error);
   const requestId = res.getHeader('x-request-id');
@@ -73,14 +64,15 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   const body: ErrorBody = {
     error: {
       code: appError.code,
+      // A 5xx message stays in the log; the client gets a request id to quote.
       message: appError.expose ? appError.message : 'Internal server error',
       ...(appError.details !== undefined ? { details: appError.details } : {}),
       ...(typeof requestId === 'string' ? { requestId } : {}),
     },
   };
 
-  // A response can already be streaming (rare, but a partially written body
-  // cannot be replaced with JSON) — the only safe move left is to end it.
+  // A partially written body cannot be replaced with JSON; ending it is all
+  // that is left.
   if (res.headersSent) {
     res.end();
     return;

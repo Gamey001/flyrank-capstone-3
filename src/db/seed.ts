@@ -7,11 +7,7 @@ import { tenantsRepository } from '../repositories/tenants.repository.js';
 import { widgetsRepository, type CreateWidgetInput } from '../repositories/widgets.repository.js';
 import { embedService } from '../services/embed.service.js';
 
-/**
- * Demo data so a stranger can clone the repo, run two commands and immediately
- * have something to look at. Idempotent: re-running it reuses the existing
- * tenants and widgets rather than duplicating them.
- */
+// Idempotent: re-running reuses the existing rows rather than duplicating them.
 
 const DEMO_PASSWORD = 'demo-password-1234';
 
@@ -35,8 +31,7 @@ const main = async (): Promise<void> => {
   await runMigrations();
 
   const acme = await seedTenant('owner@acme.test', 'Acme Inc.');
-  // A second tenant exists purely so multi-tenant isolation can be *proved*
-  // rather than asserted — probe scripts and tests use it.
+  // A second tenant exists so isolation can be demonstrated, not just asserted.
   const globex = await seedTenant('owner@globex.test', 'Globex Corp.');
 
   const newsletter = await seedWidget(acme.id, {
@@ -102,8 +97,7 @@ Seed complete.
   API base:  ${env.PUBLIC_BASE_URL}
 `);
 
-  // Written to a file too, so scripts/probes.sh can pick the ids up without
-  // scraping stdout.
+  // Also written to a file so scripts can read the ids without parsing stdout.
   const { writeFile } = await import('node:fs/promises');
   await writeFile(
     'seed-output.json',

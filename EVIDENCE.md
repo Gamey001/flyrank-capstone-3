@@ -61,8 +61,8 @@ API"*, *"rejects a token signed with the wrong secret"*.
 Creating a widget with a valid token (probe setup):
 
 ```
-  widget id  : 083d9355-6ed6-4618-bfdd-94df35e9ae3a
-  public id  : cqxzjs3t53ynd8os
+  widget id  : d44f2b57-f0bc-47fa-9fad-f52765f9131a
+  public id  : tiz8ek2irgf77uj2
 ```
 
 ### ☑ Multi-tenant isolation proven: tenant A cannot read or modify tenant B's widgets or submissions
@@ -89,7 +89,7 @@ Tests (`auth-tenancy.test.ts`):
 ### ☑ Embed snippet generated per widget
 
 ```
-  snippet : <script src="http://localhost:3011/embed/v95db10fbc8fa/widget.js?id=cqxzjs3t53ynd8os" async></script>
+  snippet : <script src="http://localhost:3011/embed/v30a2c1550b28/widget.js?id=tiz8ek2irgf77uj2" async></script>
 ```
 
 The snippet is generated, never stored, so every existing widget starts serving a
@@ -103,12 +103,12 @@ thing on demand.
 ### ☑ Public config endpoint serves a small payload with correct HTTP cache headers
 
 ```
-$ curl -si 'http://localhost:3011/api/public/widgets/cqxzjs3t53ynd8os/config' -H 'origin: http://localhost:5500'
+$ curl -si 'http://localhost:3011/api/public/widgets/tiz8ek2irgf77uj2/config' -H 'origin: http://localhost:5500'
 HTTP/1.1 200 OK
 cache-control: public, max-age=60, stale-while-revalidate=300
-etag: "40a06c612b3b2207"
+etag: "dbce940fd8426c15"
 vary: Origin
-{"id":"cqxzjs3t53ynd8os","type":"signup_form","title":"Join the list","description":null,
+{"id":"tiz8ek2irgf77uj2","type":"signup_form","title":"Join the list","description":null,
  "buttonText":"Submit","successMessage":"Thanks! We will be in touch.",
  "fields":[{"name":"email","type":"email","label":"Email","required":true},
            {"name":"consent","type":"checkbox","label":"I agree","required":true}],
@@ -117,7 +117,7 @@ vary: Origin
   PASS  conditional config request -> 304
 ```
 
-333 bytes. `Vary: Origin` because the CORS headers vary with it. Revalidation with
+365 bytes. `Vary: Origin` because the CORS headers vary with it. Revalidation with
 `If-None-Match` returns `304` with no body.
 
 The payload is a **projection**, not the row — `widget-delivery.test.ts` asserts
@@ -127,11 +127,11 @@ under 2 KB.
 ### ☑ Widget JavaScript served as a versioned bundle (new version = new URL)
 
 ```
-$ curl -sI 'http://localhost:3011/embed/v95db10fbc8fa/widget.js'
+$ curl -sI 'http://localhost:3011/embed/v30a2c1550b28/widget.js'
 HTTP/1.1 200 OK
 Content-Type: application/javascript; charset=utf-8
 cache-control: public, max-age=31536000, immutable
-x-widget-version: v95db10fbc8fa
+x-widget-version: v30a2c1550b28
 ```
 
 The version is a SHA-256 prefix of the file's own contents, computed at boot. Same
@@ -139,7 +139,8 @@ content → same URL → cacheable for a year with no risk of staleness; changed
 → a different URL, so a release is picked up instantly with no purge.
 
 Observed across this build: editing `widget.js` moved the version
-`vf0de3b45cc8b → vbc78be6d4135 → v95db10fbc8fa` with no configuration change.
+`vf0de3b45cc8b → vbc78be6d4135 → v95db10fbc8fa → v30a2c1550b28`, with no
+configuration change at any point.
 
 The unversioned `/widget.js` gets a short cache instead, because that path's content
 *does* change:
@@ -202,11 +203,11 @@ And the actual request:
 ```
 $ curl -si -X POST 'http://localhost:3011/api/public/submissions' \
     -H 'content-type: application/json' -H 'origin: http://localhost:5500' \
-    -d '{"widgetId":"cqxzjs3t53ynd8os","data":{…},"pageUrl":"http://localhost:5500/pricing"}'
+    -d '{"widgetId":"tiz8ek2irgf77uj2","data":{…},"pageUrl":"http://localhost:5500/pricing"}'
 HTTP/1.1 202 Accepted
 Access-Control-Allow-Origin: *
 cache-control: no-store
-{"ok":true,"id":"dc3633a7-cda4-4165-97bd-6f4bb2983b1e","message":"Thanks! We will be in touch."}
+{"ok":true,"id":"f11e940f-73b3-4b2c-84ac-fd5238a2b0aa","message":"Thanks! We will be in touch."}
 ```
 
 The admin API uses the opposite policy — an allow-list — and refuses an unknown
@@ -218,17 +219,17 @@ configured origins"*).
 ```
 $ curl -si … -d '{"widgetId":'
 HTTP/1.1 400 Bad Request
-{"error":{"code":"bad_request","message":"Request body is not valid JSON","requestId":"060141cc-…"}}
+{"error":{"code":"bad_request","message":"Request body is not valid JSON","requestId":"b96c71ad-…"}}
 
-$ curl -si … -d '{"widgetId":"cqxzjs3t53ynd8os","data":{"email":"not-an-email","consent":false}}'
+$ curl -si … -d '{"widgetId":"tiz8ek2irgf77uj2","data":{"email":"not-an-email","consent":false}}'
 HTTP/1.1 422 Unprocessable Entity
 {"error":{"code":"unprocessable_entity","message":"Some fields are invalid",
  "details":[{"path":"email","message":"Must be a valid email address"},
-            {"path":"consent","message":"I agree is required"}],"requestId":"eb2b7873-…"}}
+            {"path":"consent","message":"I agree is required"}],"requestId":"bb82b28e-…"}}
 
 a 20083-byte body, against a 16384-byte limit:
 HTTP/1.1 413 Payload Too Large
-{"error":{"code":"payload_too_large","message":"Request body exceeds the maximum allowed size","requestId":"13fb40fc-…"}}
+{"error":{"code":"payload_too_large","message":"Request body exceeds the maximum allowed size","requestId":"8dee92c1-…"}}
 
   PASS  malformed JSON -> 400
   PASS  invalid field data -> 422
@@ -251,13 +252,13 @@ never declared is rejected rather than quietly stored:
 ```
 $ curl -s 'http://localhost:3011/api/dashboard/submissions?limit=2' -H 'authorization: Bearer <redacted>'
 {"submissions":[
-  {"id":"151400ee-…","widgetId":"083d9355-…","tenantId":"32a952da-…","status":"stored",
+  {"id":"e0de705f-…","widgetId":"d44f2b57-…","tenantId":"2abf247e-…","status":"stored",
    "spamReason":null,"data":{"email":"probe1@example.com","consent":true},
    "email":"probe1@example.com","ipAddress":"203.0.113.42","userAgent":"curl/8.4.0",
    "origin":"http://localhost:5500","pageUrl":null,
    "geoProvider":"mock-a","geoStatus":"enriched","country":"Germany","countryCode":"DE",
    "region":"Berlin","city":"Berlin","latitude":52.52,"longitude":13.405,
-   "idempotencyKey":null,"createdAt":"2026-08-31T13:03:39.270Z"},
+   "idempotencyKey":null,"createdAt":"2026-08-31T17:55:32.472Z"},
   …],"pagination":{"total":2,"limit":2,"offset":0}}
 
   PASS  dashboard lists the stored submissions (total=2)
@@ -295,7 +296,7 @@ HTTP/1.1 429 Too Many Requests
 RateLimit-Policy: 5;w=60
 RateLimit: limit=5, remaining=0, reset=60
 Retry-After: 60
-{"error":{"code":"too_many_requests","message":"Too many submissions from this source. Please slow down and try again shortly.","scope":"ip","retryAfterSeconds":60,"requestId":"03a18597-…"}}
+{"error":{"code":"too_many_requests","message":"Too many submissions from this source. Please slow down and try again shortly.","scope":"ip","retryAfterSeconds":60,"requestId":"851de991-…"}}
 
 --- and the service is still up for everyone else
   PASS  health -> 200
@@ -322,7 +323,7 @@ budget before they submit (`rate-limit.test.ts`).
 ### ☑ At least one spam-prevention technique demonstrably blocks a spam submission
 
 ```
-$ curl -si … -d '{"widgetId":"cqxzjs3t53ynd8os",
+$ curl -si … -d '{"widgetId":"tiz8ek2irgf77uj2",
                   "data":{"email":"bot@spam.test","consent":true,
                           "company_website":"http://spam.example"}}'
 HTTP/1.1 202 Accepted
@@ -395,7 +396,7 @@ the chain entirely; and:
 EMAIL_TRANSPORT=fail makes every confirmation email throw.
 
 HTTP/1.1 202 Accepted
-{"ok":true,"id":"ccc7b519-b54d-4543-84f7-61dd4edc40aa","message":"Thanks! We will be in touch."}
+{"ok":true,"id":"fbf65b05-88e1-4c72-9356-aef48ae38714","message":"Thanks! We will be in touch."}
 
   PASS  submission accepted despite the broken mailer -> 202
   PASS  the row is stored (13 -> 14)
@@ -404,14 +405,14 @@ HTTP/1.1 202 Accepted
 The failure is real, and it happens where the visitor cannot see it:
 
 ```json
-{"level":40,"jobId":"ebaeb992-79f8-46ea-bf77-95eee08e7da3","type":"submission.notify_email",
+{"level":40,"jobId":"189e001d-6778-4559-b1be-b63e9041ce91","type":"submission.notify_email",
  "attempts":1,"err":"EMAIL_TRANSPORT=fail: simulated mail provider outage",
  "msg":"job failed, scheduled for retry"}
 ```
 
 ```
 $ curl -s 'http://localhost:3011/readyz'
-{"status":"ready","database":"ok","widgetVersion":"v95db10fbc8fa","jobs":{"pending":3,"succeeded":120}}
+{"status":"ready","database":"ok","widgetVersion":"v30a2c1550b28","jobs":{"succeeded":11,"pending":3}}
 
   PASS  the failing email job was retried in the background, not on the request path
 ```

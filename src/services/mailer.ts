@@ -13,11 +13,6 @@ export interface Mailer {
   send(email: OutgoingEmail): Promise<void>;
 }
 
-/**
- * Default transport. The brief is explicit that a real mail provider is not
- * what is graded — delivering the message to the log costs nothing, needs no
- * credentials, and exercises exactly the same job path.
- */
 const logMailer: Mailer = {
   kind: 'log',
   async send(email) {
@@ -25,10 +20,8 @@ const logMailer: Mailer = {
   },
 };
 
-/**
- * Always throws. Used to demonstrate that a broken side effect cannot take a
- * submission down (acceptance probe 5) without editing any code.
- */
+// A demo switch, not a fallback: it exists so a broken side effect can be
+// demonstrated without editing code. Never configure it outside a demo.
 const failingMailer: Mailer = {
   kind: 'fail',
   async send() {
@@ -42,7 +35,7 @@ const smtpMailer = (): Mailer => {
   return {
     kind: 'smtp',
     async send(email) {
-      // Created lazily so a misconfigured SMTP host cannot stop the API booting.
+      // Lazy, so a misconfigured SMTP host cannot stop the API booting.
       transporter ??= nodemailer.createTransport({
         host: env.SMTP_HOST,
         port: env.SMTP_PORT,

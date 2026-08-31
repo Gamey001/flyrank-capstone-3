@@ -1,11 +1,5 @@
 import { pool, type Queryable } from '../db/pool.js';
 
-/**
- * Read-only aggregation queries for the owner dashboard. They are grouped in
- * their own repository because they answer questions rather than fetch rows —
- * and because every one of them is scoped to a single tenant.
- */
-
 export interface TotalsRow {
   total: number;
   stored: number;
@@ -56,8 +50,8 @@ export const statsRepository = {
     options: { since: Date; granularity: 'hour' | 'day' },
     db: Queryable = pool,
   ): Promise<TimeseriesPoint[]> {
-    // `granularity` is constrained to two literals by the caller's schema, so
-    // interpolating it into date_trunc is safe — it can never be user text.
+    // Interpolated, not parameterised, because date_trunc's unit cannot be a
+    // bind parameter. Safe only because this ternary can yield two literals.
     const unit = options.granularity === 'hour' ? 'hour' : 'day';
     const { rows } = await db.query<{ bucket: Date; stored: number; spam: number }>(
       `SELECT date_trunc('${unit}', created_at) AS bucket,
@@ -77,8 +71,7 @@ export const statsRepository = {
   },
 
   async perWidget(tenantId: string, since: Date, db: Queryable = pool): Promise<WidgetStatsRow[]> {
-    // LEFT JOIN so a widget with no submissions yet still appears with zeros —
-    // an empty row is information, a missing row looks like a bug.
+    // LEFT JOIN so a widget with no submissions still appears, with zeros.
     const { rows } = await db.query<WidgetStatsRow>(
       `SELECT w.id  AS widget_id,
               w.name AS widget_name,

@@ -16,7 +16,5 @@ export const submissionListQuery = z
 
 export const statsQuery = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30),
-  // Hourly buckets over a year would be 8,760 points — useless to plot and
-  // expensive to build, so the caller picks the resolution explicitly.
   granularity: z.enum(['hour', 'day']).default('day'),
 });

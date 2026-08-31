@@ -1,11 +1,8 @@
 import { fetchWithTimeout } from '../../lib/http-client.js';
 import type { GeoLookup, GeoProvider } from './provider.js';
 
-/**
- * ip-api.com — free, no key, 45 requests/minute from one IP.
- * Note it answers 200 with `{"status":"fail"}` rather than an HTTP error, so
- * the body has to be inspected, not just the status code.
- */
+// Answers 200 with `{"status":"fail"}` rather than an HTTP error status, so the
+// body has to be inspected and not just `response.ok`.
 export const ipApiProvider: GeoProvider = {
   name: 'ip-api',
   async lookup(ip, timeoutMs) {
@@ -28,7 +25,6 @@ export const ipApiProvider: GeoProvider = {
   },
 };
 
-/** ipapi.co — free tier, ~1,000 lookups/day, no card. Second in the chain. */
 export const ipapiCoProvider: GeoProvider = {
   name: 'ipapi-co',
   async lookup(ip, timeoutMs) {
@@ -50,14 +46,8 @@ export const ipapiCoProvider: GeoProvider = {
   },
 };
 
-/**
- * Deterministic providers used to prove the fallback chain.
- *
- * The brief asks for the fallback proof to be reproducible, and a proof that
- * depends on a third party being down is not a proof. These answer instantly
- * and can be switched off with GEO_FORCE_DOWN, so probe 4 gives the same
- * result on every machine, offline included.
- */
+// Deterministic stand-ins for the fallback proof: a demonstration that depends
+// on a third party actually being down is a coin flip, not a proof.
 const mockProvider = (name: string, location: GeoLookup): GeoProvider => ({
   name,
   lookup: async () => location,

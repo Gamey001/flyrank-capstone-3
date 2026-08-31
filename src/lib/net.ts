@@ -9,10 +9,8 @@ const PRIVATE_V4 = [
   /^0\./,
 ];
 
-/**
- * Geo providers cannot resolve a LAN address, and asking them wastes the
- * request budget. Local traffic (every `curl localhost`) is skipped instead.
- */
+// Note an unparseable address answers `true`: callers use this to decide
+// whether a geo lookup is worth attempting, and garbage never is.
 export const isPrivateIp = (ip: string): boolean => {
   const version = isIP(ip);
   if (version === 0) return true;
