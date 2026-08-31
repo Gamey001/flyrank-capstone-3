@@ -1,41 +1,45 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS build
+FROM python:3.12-slim AS build
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
-COPY tsconfig.json tsconfig.build.json ./
-COPY src ./src
-COPY scripts ./scripts
-RUN npm run build
+# Built into a wheel-less venv that the runtime stage copies wholesale, so the
+# compilers and build metadata never reach the final image.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Dev dependencies stay in the build stage; only these reach the runtime image.
-FROM node:22-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY pyproject.toml README.md ./
+COPY app ./app
+RUN pip install --no-cache-dir .
 
-FROM node:22-alpine AS runtime
+# --- runtime ---------------------------------------------------------------
+FROM python:3.12-slim AS runtime
 WORKDIR /app
 
-ENV NODE_ENV=production
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ENVIRONMENT=production \
+    PATH="/opt/venv/bin:$PATH"
 
-# Without an init, SIGTERM never reaches Node and the graceful shutdown in
-# server.ts does not run.
-RUN apk add --no-cache tini
+# Without an init, SIGTERM never reaches Python and the graceful shutdown in the
+# lifespan handler does not run.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini curl \
+ && rm -rf /var/lib/apt/lists/*
 
-COPY --from=deps  /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY package.json ./
+COPY --from=build /opt/venv /opt/venv
+COPY app ./app
+COPY pyproject.toml ./
 
-USER node
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=5 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD curl -fsS "http://127.0.0.1:${PORT:-3000}/readyz" || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/server.js"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["sh", "-c", "uvicorn app.http.app:app --host 0.0.0.0 --port ${PORT:-3000}"]

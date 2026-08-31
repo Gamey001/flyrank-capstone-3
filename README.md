@@ -5,8 +5,8 @@ A multi-tenant platform where a customer defines a widget, pastes **one line of
 rate-limited, spam-filtered, enriched with geo data, stored, and shown back to them
 in a dashboard.
 
-FlyRank backend-track capstone. Node + TypeScript + Express 5 + PostgreSQL, all of it
-free to run: `docker compose up --build`.
+FlyRank backend-track capstone. Python + FastAPI + Pydantic v2 + asyncpg + PostgreSQL,
+all of it free to run: `docker compose up --build`.
 
 ```html
 <script src="http://localhost:3000/embed/v30a2c1550b28/widget.js?id=sddtsb3bkqci93v5" async></script>
@@ -66,7 +66,7 @@ submission, abuse protection, enrichment, notification — follows from it.
 | | Version | Why |
 |---|---|---|
 | **Docker** + Compose | any current | Postgres, and the one-command run |
-| **Node** | 20.11+ (developed on 22) | only for local development and the test suite |
+| **Python** | 3.11+ (image uses 3.12) | only for local development and the test suite |
 
 Nothing else. No API keys, no accounts, no credit card — the geo providers used in
 development are free and keyless, and the email side effect writes to the log by
@@ -93,7 +93,7 @@ what makes the CORS path real rather than theoretical.
 Then seed demo data:
 
 ```bash
-docker compose exec api node dist/db/seed.js
+docker compose exec api python -m app.db.seed
 ```
 
 It prints two demo accounts, their widgets, and the ready-to-paste `<script>` tags:
@@ -129,28 +129,31 @@ curl -s localhost:3000/readyz
 ```bash
 cp .env.example .env                     # then set JWT_SECRET: openssl rand -hex 32
 docker compose up -d db                  # Postgres only
-npm install
-npm run migrate && npm run seed
-npm run dev                              # API   http://localhost:3000  (watch mode)
-npm run site                             # site  http://localhost:5500
+
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+python -m app.db.migrate && python -m app.db.seed
+uvicorn app.http.app:app --reload --port 3000    # API   http://localhost:3000
+python scripts/serve_customer_site.py            # site  http://localhost:5500
 ```
+
+Interactive API docs, generated from the route signatures, are at
+**<http://localhost:3000/docs>** once the API is up.
 
 ### Every script
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | API in watch mode |
-| `npm run dev:worker` | job worker as a separate process, in watch mode |
-| `npm run site` | serves `customer-site/` on :5500 — the second origin |
-| `npm run migrate` | applies pending migrations (also runs automatically at boot) |
-| `npm run seed` | idempotent demo data; writes `seed-output.json` for scripts |
-| `npm test` | 69 integration + unit tests against a real Postgres |
-| `npm run test:watch` | same, in watch mode |
-| `npm run probes` | acceptance probes 1–6 end to end; writes `.evidence/probes.log` |
-| `npm run build` | compiles to `dist/` and copies the widget bundle + migrations |
-| `npm start` | runs the built output |
-| `npm run start:worker` | runs the built worker alone |
-| `npm run lint` / `npm run typecheck` | eslint / tsc |
+| `uvicorn app.http.app:app --reload` | API in watch mode |
+| `python -m app.worker` | job worker as a separate process |
+| `python scripts/serve_customer_site.py` | serves `customer-site/` on :5500 — the second origin |
+| `python -m app.db.migrate` | applies pending migrations (also runs automatically at boot) |
+| `python -m app.db.seed` | idempotent demo data; writes `seed-output.json` for scripts |
+| `pytest` | 74 integration + unit tests against a real Postgres |
+| `./scripts/probes.sh` | acceptance probes 1–6 end to end; writes `.evidence/probes.log` |
+| `ruff check .` / `ruff format .` | lint / format |
+| `mypy app` | type-check in strict mode |
 
 ---
 
@@ -861,8 +864,8 @@ Two different problems, two different answers:
   `stale-while-revalidate` + an ETag derived from `revision` and `updated_at`, so an
   edit lands within a minute and revalidation costs a `304`, not a payload.
 
-Express's automatic ETag is **disabled** — every route states its caching explicitly
-rather than inheriting a guess.
+Every route sets its own cache headers explicitly rather than inheriting a framework
+default, and the config route compares `If-None-Match` itself to return the `304`.
 
 ### Secrets
 
@@ -899,8 +902,8 @@ By default the job worker runs inside the API process. To run it as its own
 process or container:
 
 ```bash
-RUN_WORKER_IN_PROCESS=false npm start     # API without a worker
-npm run start:worker                      # the worker alone
+RUN_WORKER_IN_PROCESS=false uvicorn app.http.app:app --port 3000   # API, no worker
+python -m app.worker                                              # the worker alone
 ```
 
 Several workers can run at once — `FOR UPDATE SKIP LOCKED` gives each a disjoint
@@ -910,9 +913,9 @@ jobs.
 
 ### Graceful shutdown
 
-`SIGTERM`/`SIGINT` stops accepting connections, drains in-flight requests, lets the
-current job batch finish, then closes the pool. The Docker image runs under `tini` so
-the signal actually reaches Node.
+`SIGTERM`/`SIGINT` stops accepting connections, drains in-flight requests, waits for
+the current job batch to finish, then closes the pool — all in the FastAPI lifespan
+handler. The Docker image runs under `tini` so the signal actually reaches Python.
 
 ### Local mail catcher
 
@@ -961,7 +964,7 @@ behaviour most:
 | `EMAIL_TRANSPORT` | `log` | `log`, `smtp` (Mailpit), or `fail` to prove side-effect safety |
 | `JOB_POLL_INTERVAL_MS` | `1000` | worker poll interval |
 | `JOB_MAX_ATTEMPTS` | `5` | attempts before a job is marked `dead` |
-| `RUN_WORKER_IN_PROCESS` | `true` | `false` when running `npm run start:worker` separately |
+| `RUN_WORKER_IN_PROCESS` | `true` | `false` when running `python -m app.worker` separately |
 | `LOG_LEVEL` | `info` | pino level |
 
 A bad value fails the boot with a per-variable message rather than surfacing later as
@@ -973,27 +976,26 @@ a runtime error.
 
 ```bash
 docker compose up -d db
-npm test          # 69 integration + unit tests against a real Postgres
-npm run probes    # acceptance probes 1-6, end to end, on a real port
+pytest               # 74 integration + unit tests against a real Postgres
+./scripts/probes.sh  # acceptance probes 1-6, end to end, on a real port
 ```
 
 The suite runs against a real database because the behaviours under test — unique
 indexes, transactions, tenant filters, `SKIP LOCKED` — do not exist in a mock. It is
-deterministic: no test touches a third party, and the rate-limit files configure their
-own limits before importing the app so they cannot affect each other.
+deterministic: no test touches a third party, and the rate-limit tests swap in their
+own limiters so tight limits cannot leak into anything else.
 
 | File | Covers |
 |---|---|
-| `auth-tenancy.test.ts` | auth, account enumeration resistance, cross-tenant read/write/list/delete |
-| `widget-delivery.test.ts` | CRUD, validation, immutable bundle, version redirect, config cache + ETag + 304 |
-| `submissions.test.ts` | CORS + preflight, malformed/oversized/undeclared payloads, origin allow-list, all three spam signals, idempotency incl. concurrent |
-| `rate-limit.test.ts` | 429 under burst, other visitors unaffected, preflight exemption, service stays up |
-| `rate-limit-widget.test.ts` | distributed flood capped per widget |
-| `enrichment.test.ts` | full fallback chain, timeouts, both-down degradation, private-IP skip |
-| `side-effects.test.ts` | outbox atomicity, failing mailer/webhook, retry → backoff → dead + alert, concurrent claim safety |
-| `dashboard.test.ts` | aggregations, filters, pagination, query validation |
+| `test_auth_tenancy.py` | auth, account enumeration resistance, cross-tenant read/write/list/delete |
+| `test_widget_delivery.py` | CRUD, validation, immutable bundle, version redirect, config cache + ETag + 304 |
+| `test_submissions.py` | CORS + preflight, malformed/oversized/undeclared payloads, origin allow-list, all three spam signals, idempotency incl. concurrent |
+| `test_rate_limit.py` | 429 under burst, other visitors unaffected, preflight exemption, per-widget distributed flood |
+| `test_enrichment.py` | full fallback chain, timeouts, both-down degradation, private-IP skip |
+| `test_side_effects.py` | outbox atomicity, failing mailer/webhook, retry → backoff → dead + alert, concurrent claim safety |
+| `test_dashboard.py` | aggregations, filters, pagination, query validation, OpenAPI schema |
 
-`npm run probes` starts and restarts the API itself with the configuration each probe
+`./scripts/probes.sh` starts and restarts the API itself with the configuration each probe
 needs, and writes a full transcript to `.evidence/probes.log`. It refuses to run if
 another API process shares the job queue, because a stray worker would silently
 service the jobs a probe needs to observe failing. See [EVIDENCE.md](EVIDENCE.md) for
@@ -1004,22 +1006,24 @@ pasted output.
 ## Project layout
 
 ```
-src/
-  config/env.ts            every env var, validated at boot
+app/
+  config/settings.py       every env var, validated at boot
   db/                      pool, migration runner, .sql migrations, seed
-  domain/models.ts         the shared vocabulary
+  domain/models.py         the shared vocabulary (camelCase on the wire)
   repositories/            the only files that write SQL
   services/                business rules — no HTTP, no status codes
-    geo/                   provider interface, registry, fallback chain
+    geo/                   provider protocol, registry, fallback chain
+    field_validation.py    the per-widget submission validator
   jobs/                    worker + handlers (email, webhook)
   http/
-    middleware/            request id, CORS ×2, rate limits ×4, auth, validate, errors
-    routes/                auth · widgets · public · dashboard · health
-    validators/            zod schemas at the boundary
+    middleware/            request id + logging, body size limit, rate limiter
+    routers/               auth · widgets · public · dashboard · health
+    schemas.py             Pydantic models at the boundary
+    errors.py              the one place an error becomes a response
   widget/widget.js         the embeddable bundle (plain ES5-era JS, no build)
 customer-site/             the "customer website" — a second origin
 scripts/probes.sh          acceptance probes 1-6
-test/                      integration + unit tests
+tests/                     integration + unit tests
 ```
 
 Also: [DESIGN.md](DESIGN.md) (the one-page design doc), [EVIDENCE.md](EVIDENCE.md)
@@ -1050,8 +1054,8 @@ that with `TRUST_PROXY_HOPS=0` all local traffic counts as one client.
 Expected for local traffic: `127.0.0.1` and private ranges have no public location.
 See [Exercising the real geo providers](#exercising-the-real-geo-providers).
 
-**`npm run probes` exits saying another API process shares the queue**
-Stop the compose API (`docker compose stop api`) or any `npm run dev` still running.
+**`./scripts/probes.sh` exits saying another API process shares the queue**
+Stop the compose API (`docker compose stop api`) or any `uvicorn` still running.
 A second worker would service the failing jobs probe 5 needs to observe.
 
 **Widget shows an old version after a release**
@@ -1080,6 +1084,9 @@ Honest list of what this does not do.
 - **JWTs cannot be revoked before they expire.** No refresh tokens, no session table.
 - **The bundle is served unminified** and is not behind a real CDN — the cache headers
   are correct for one, but nothing is deployed.
+- **The rate limiter is hand-written** rather than `slowapi`. The two scopes key off
+  different things — per-IP before the body is read, per-widget after it is parsed —
+  which does not fit a decorator, and the draft-7 headers are part of the contract.
 - **`EMAIL_TRANSPORT=fail` is a demo switch.** It exists to make probe 5 reproducible
   and has no business in a production configuration.
 - **Spam heuristics are simple** and would be evaded by a determined attacker. They

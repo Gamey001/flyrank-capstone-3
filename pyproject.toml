@@ -1,0 +1,76 @@
+[project]
+name = "flyrank-capstone-widget-platform"
+version = "1.0.0"
+description = "Embeddable widget & lead-capture platform — FlyRank backend capstone"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+dependencies = [
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.6.1",
+    "asyncpg==0.30.0",
+    "pyjwt==2.10.1",
+    "httpx==0.28.1",
+    "structlog==24.4.0",
+    "aiosmtplib==3.0.2",
+    "email-validator==2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio>=1.0",
+    "asgi-lifespan==2.1.0",
+    "ruff==0.8.3",
+    "mypy==1.13.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# The pool, the app lifespan and each test must share one event loop, or a
+# connection opened by a session fixture is unusable from a test.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+# Files share one database and truncate it between tests, so they run serially.
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["app/widget", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "S"]
+ignore = [
+    "S101",  # assert: pytest's whole idiom
+    "B008",  # function call in default arg: how FastAPI Depends() works
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests hard-code demo credentials and hit http:// URLs on purpose.
+"tests/*" = ["S105", "S106", "S311"]
+# S608: every interpolation in these queries is a module-level constant (the
+#   column list) or a value from a closed allow-list (the updatable-column map,
+#   the two-literal date_trunc unit). Caller-supplied values are always bound
+#   parameters — see the comments at each site.
+# A002: `type` matches the database column and the public JSON key; renaming it
+#   at the repository boundary would make the two disagree.
+"app/repositories/*" = ["S608", "A002"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "aiosmtplib.*"]
+ignore_missing_imports = true

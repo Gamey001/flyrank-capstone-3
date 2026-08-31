@@ -8,6 +8,13 @@ points at. Where I could not, I rewrote them.
 the whole build. It wrote most of the first draft of every file. What follows is
 what it got right, what it got wrong, and what I had to change.
 
+**A note on the history.** This was first built in Node + TypeScript + Express, then
+ported to Python + FastAPI. Both are in the git history. That was my call — the brief
+allows either lane, and I chose the language *after* seeing the design work. The port
+is documented at the end of this file; the acceptance probes are pure HTTP and
+validated both implementations without a single change, which is what made the port
+tractable rather than a rewrite.
+
 **Runtime AI cost: none.** The service makes no AI calls, so shared requirement #7
 (per-call cost tracking with a budget guard) has nothing to track. AI was a build
 tool, not a dependency.
@@ -146,3 +153,69 @@ things I checked by hand, not just by test:
 - Ran `docker compose up --build` from a clean image to confirm the one-command
   promise in the README, which is how I found that `tsc` does not copy `.sql`
   migrations into `dist/`.
+
+---
+
+## The port to FastAPI
+
+The design carried over intact. What did not, and what it taught me:
+
+**1. Exceptions raised in middleware bypass FastAPI's exception handlers.**
+Starlette's `ExceptionMiddleware` sits *inside* the user middleware stack, so an
+`AppError` raised by my body-size middleware escaped every handler and surfaced as a
+`500` — the exact failure acceptance probe 2 exists to catch. The fix is to *return* a
+`JSONResponse` rather than raise. The same bug was present in my CORS middleware.
+I only found it because the probes were already written and probe 2 went red.
+
+**2. Starlette's `CORSMiddleware` is global.**
+It cannot express "open to everyone on these paths, allow-listed on those", and being
+global it answered the public preflights with the admin policy — a `400`, and
+`access-control-allow-origin` echoing the caller instead of `*`. Replaced with one
+middleware holding both policies and dispatching on path.
+
+**3. Pydantic serialises snake_case unless told otherwise.**
+The widget response came back with `public_id`, `button_text` and so on, silently
+breaking the documented camelCase contract. Caught because `probes.sh` reads
+`widget.publicId` and got an empty string. Fixed with an alias generator on the domain
+models rather than a hand-written key map — which also let me delete the ad-hoc
+camelCase mapping I had started writing in the dashboard router.
+
+**4. `email-validator` rejects `.test` and `.example` domains.**
+Every demo account and every example in the brief uses them. My first fix gated the
+check on `ENVIRONMENT != production` — which then made the seeded accounts unusable in
+the compose stack, because that runs as production. That was a bad design: the same
+input being valid or invalid depending on deployment is surprising, and inconsistent
+when `check_deliverability=False` already means we never verify the domain resolves.
+Removed the gate; reserved TLDs are always accepted, and the reasoning is in the code.
+
+**5. Python classifies TEST-NET addresses as private; the Node regexes did not.**
+`ipaddress.ip_address('203.0.113.42').is_private` is `True` — the RFC 5737
+documentation ranges are in the special-use registry. My hand-written Node regexes
+only covered RFC 1918, loopback and link-local, so the old probes used `203.0.113.42`
+as a "public" visitor IP and geo enrichment ran. Under Python it was skipped and probe
+4 proved nothing. **Python's behaviour is more correct** — those addresses genuinely
+have no location — so I kept it and switched the probes to `8.8.8.8`.
+
+**6. Repeated `X-Forwarded-For` headers.**
+`headers.get()` returns only the first; RFC 7230 says repeated headers are equivalent
+to one comma-joined value. A probe sending two of them got the already-limited IP back
+and failed. Fixed with `getlist()` and a join — a correctness bug the test happened to
+expose rather than a test artefact.
+
+**7. FastAPI does not derive HEAD from a GET route.**
+Express does. `curl -sI` — which the probe script uses to read the ETag, and which
+monitors and caches use generally — got a `405`. Registered HEAD explicitly on the
+public GET routes, out of the OpenAPI schema so each endpoint is still documented once.
+
+**8. pytest-asyncio's default loop scoping.**
+Session-scoped fixtures (the connection pool, the app lifespan) were created on one
+event loop and the tests ran on another, so every test errored with *"attached to a
+different loop"*. Fixed by pinning both fixture and test loop scope to the session.
+
+### What I would tell someone choosing the lane
+
+The hard parts of this project — CORS, abuse resistance, graceful degradation, the
+outbox — are design problems, and they looked almost identical in both languages. The
+differences that mattered were all at the framework boundary, and every one of them
+was caught by tests and probes that already existed. That is the actual lesson: the
+probes were worth more than either implementation.

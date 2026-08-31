@@ -1,6 +1,9 @@
-node_modules
-dist
-coverage
+.venv
+__pycache__
+*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
 .git
 .github
 .env
@@ -8,4 +11,6 @@ coverage
 !.env.example
 *.log
 .evidence
+tests
 docs
+seed-output.json

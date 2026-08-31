@@ -1,8 +1,8 @@
 # Manifest read by the FlyRank evaluator.
 capstone: embeddable-widget-and-lead-capture-platform
 track: backend
-language: typescript
-stack: [node, express, postgres, docker]
+language: python
+stack: [python, fastapi, pydantic, asyncpg, postgres, docker]
 
 # One command, clean machine: builds the image, starts Postgres, migrates on
 # boot, and serves the customer test page on a second origin.
@@ -10,18 +10,22 @@ run: docker compose up --build
 
 # Demo tenants and widgets. Prints the public widget ids and embed snippets,
 # and writes seed-output.json for scripts. Idempotent.
-seed: docker compose exec api node dist/db/seed.js
+seed: docker compose exec api python -m app.db.seed
 
 # Integration suite against a real Postgres. Needs `docker compose up -d db`.
-test: npm test
+test: pytest
 
 base_url: http://localhost:3000
+
+# FastAPI generates these from the route signatures.
+docs_url: http://localhost:3000/docs
+openapi_url: http://localhost:3000/openapi.json
 
 # The second origin — a plain HTML "customer website" that loads the widget.
 customer_site_url: http://localhost:5500
 
 # Runs acceptance probes 1-6 end to end and writes .evidence/probes.log.
-verify: npm run probes
+verify: ./scripts/probes.sh
 
 credentials:
   # Seeded demo accounts. Local demo data only — not secrets.

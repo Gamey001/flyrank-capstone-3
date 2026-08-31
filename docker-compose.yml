@@ -25,7 +25,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      ENVIRONMENT: production
       PORT: 3000
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3000,http://localhost:5500}
@@ -43,9 +43,9 @@ services:
   # The "customer website". Its value is the port: a different origin from the
   # API is what makes the CORS path real rather than theoretical.
   customer-site:
-    image: node:22-alpine
+    image: python:3.12-slim
     working_dir: /site
-    command: ["npx", "--yes", "serve", "-l", "5500", "."]
+    command: ["python", "-m", "http.server", "5500"]
     volumes:
       - ./customer-site:/site:ro
     ports:
